@@ -1,0 +1,62 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: ./cmd/api-service/Dockerfile
+    environment:
+      - INFLUXDB_URL=http://influxdb:8086
+      - INFLUXDB_TOKEN=supersecrettoken
+      - INFLUXDB_ORG=telemetryorg
+      - INFLUXDB_BUCKET=telem_bucket
+    depends_on:
+      - influxdb
+    ports:
+      - "8081:8080"
+  streamer:
+    build:
+      context: .
+      dockerfile: ./cmd/streamer-service/Dockerfile
+    environment:
+      - CSV_PATH=/data/dcgm_metrics_20250718_134233.csv
+      - CSV_DELAY_MS=1000
+    volumes:
+      - ./dcgm_metrics_20250718_134233.csv:/data/dcgm_metrics_20250718_134233.csv:ro
+    ports:
+      - "8085:8085"
+
+  influxdb:
+    image: influxdb:2.7
+    container_name: influxdb
+    ports:
+      - "8086:8086"
+    environment:
+      - DOCKER_INFLUXDB_INIT_MODE=setup
+      - DOCKER_INFLUXDB_INIT_USERNAME=admin
+      - DOCKER_INFLUXDB_INIT_PASSWORD=admin123
+      - DOCKER_INFLUXDB_INIT_ORG=telemetryorg
+      - DOCKER_INFLUXDB_INIT_BUCKET=telem_bucket
+      - DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=supersecrettoken
+    volumes:
+      - influxdb-data:/var/lib/influxdb2
+
+  collector:
+    build:
+      context: .
+      dockerfile: ./cmd/collector-service/Dockerfile
+    environment:
+      - INFLUXDB_URL=http://influxdb:8086
+      - INFLUXDB_TOKEN=supersecrettoken
+      - INFLUXDB_ORG=telemetryorg
+      - INFLUXDB_BUCKET=telem_bucket
+    depends_on:
+      - influxdb
+  
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+
+volumes:
+  influxdb-data:
