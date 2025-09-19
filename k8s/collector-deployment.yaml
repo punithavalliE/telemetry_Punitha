@@ -25,6 +25,16 @@ spec:
           value: telemetryorg
         - name: INFLUXDB_BUCKET
           value: telem_bucket
+        - name: USE_HTTP_QUEUE
+          value: "true"
+        - name: MSG_QUEUE_ADDR
+          value: "http://msg-queue:8080"
+        - name: MSG_QUEUE_TOPIC
+          value: "telemetry"
+        - name: MSG_QUEUE_GROUP
+          value: "telemetry_group"
+        - name: MSG_QUEUE_CONSUMER_NAME
+          value: "collector"
 ---
 apiVersion: v1
 kind: Service

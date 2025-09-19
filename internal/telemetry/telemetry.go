@@ -7,7 +7,7 @@ type TelemetryData struct {
 	DeviceID string  `json:"device_id"`
 	Metric   string  `json:"metric"`
 	Value    int64   `json:"value"`
-	Time     time.Time `json:"time"`
+	Time     string `json:"time"`
 }
 
 // Marshal marshals TelemetryData to JSON.

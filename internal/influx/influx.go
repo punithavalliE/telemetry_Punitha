@@ -21,6 +21,7 @@ func NewInfluxWriter(url, token, org, bucket string) *InfluxWriter {
 }
 
 func (iw *InfluxWriter) WriteTelemetry(deviceID string, metric string, value int64, ts time.Time) error {
+	fmt.Printf("Writing to InfluxDB: device=%s, metric=%s, value=%d, time=%s\n", deviceID, metric, value, ts.Format(time.RFC3339))
 	writeAPI := iw.client.WriteAPIBlocking(iw.org, iw.bucket)
 	p := influxdb2.NewPoint(
 		"telemetry",
@@ -69,6 +70,16 @@ func (iw *InfluxWriter) QueryRecentTelemetry(limit int) ([]TelemetryRecord, erro
 		      }
 	      }
 	      if v := result.Record().ValueByKey("_value"); v != nil {
+		      switch val := v.(type) {
+		      case int64:
+			      value = val
+		      case float64:
+			      value = int64(val)
+		      case int:
+			      value = int64(val)
+		      }
+	      }
+			if v := result.Record().ValueByKey("_value"); v != nil {
 		      switch val := v.(type) {
 		      case int64:
 			      value = val

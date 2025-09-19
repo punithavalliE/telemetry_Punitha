@@ -1,7 +1,7 @@
-FROM golang:1.20-alpine as builder
+FROM golang:1.20-alpine AS builder
 WORKDIR /app
 COPY . .
-RUN cd /app && go build -mod=vendor -o collector-service ./cmd/collector-service
+RUN cd /app && go build -mod=vendor -o collector-service ./services/collector-service
 
 FROM alpine:latest
 WORKDIR /app

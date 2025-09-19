@@ -2,7 +2,7 @@ services:
   api:
     build:
       context: .
-      dockerfile: ./cmd/api-service/Dockerfile
+      dockerfile: ./services/api-service/Dockerfile
     environment:
       - INFLUXDB_URL=http://influxdb:8086
       - INFLUXDB_TOKEN=supersecrettoken
@@ -15,14 +15,21 @@ services:
   streamer:
     build:
       context: .
-      dockerfile: ./cmd/streamer-service/Dockerfile
+      dockerfile: ./services/streamer-service/Dockerfile
     environment:
       - CSV_PATH=/data/dcgm_metrics_20250718_134233.csv
       - CSV_DELAY_MS=1000
+      - USE_HTTP_QUEUE=true
+      - MSG_QUEUE_ADDR=http://msg_queue:8080
+      - MSG_QUEUE_TOPIC=telemetry
+      - MSG_QUEUE_GROUP=telemetry_group
+      - MSG_QUEUE_PRODUCER_NAME=streamer
     volumes:
       - ./dcgm_metrics_20250718_134233.csv:/data/dcgm_metrics_20250718_134233.csv:ro
     ports:
       - "8085:8085"
+    depends_on:
+      - msg_queue
 
   influxdb:
     image: influxdb:2.7
@@ -42,14 +49,35 @@ services:
   collector:
     build:
       context: .
-      dockerfile: ./cmd/collector-service/Dockerfile
+      dockerfile: ./services/collector-service/Dockerfile
     environment:
       - INFLUXDB_URL=http://influxdb:8086
       - INFLUXDB_TOKEN=supersecrettoken
       - INFLUXDB_ORG=telemetryorg
       - INFLUXDB_BUCKET=telem_bucket
+      - USE_HTTP_QUEUE=true
+      - MSG_QUEUE_ADDR=http://msg_queue:8080
+      - MSG_QUEUE_TOPIC=telemetry
+      - MSG_QUEUE_GROUP=telemetry_group
+      - MSG_QUEUE_CONSUMER_NAME=collector
     depends_on:
       - influxdb
+      - msg_queue
+
+  msg_queue:
+    build:
+      context: .
+      dockerfile: ./services/msg_queue/Dockerfile
+    environment:
+      - PORT=8080
+      - BROKER_INDEX=0
+      - BROKER_COUNT=1
+      - TOPICS=telemetry:4,events:8,orders:4,default:8
+    ports:
+      - "8090:8080"
+    volumes:
+      - msg_queue-data:/root/data
+    restart: unless-stopped
   
   redis:
     image: redis:7-alpine
@@ -60,3 +88,4 @@ services:
 
 volumes:
   influxdb-data:
+  msg_queue-data:

@@ -16,7 +16,7 @@ import (
 
 
 	type CollectorService struct {
-		queue  *shared.RedisStreamQueue
+		queue  shared.MessageQueue
 		logger *log.Logger
 		config config.Config
 		influx *influx.InfluxWriter
@@ -26,29 +26,60 @@ func NewCollectorService() *CollectorService {
 	logger := log.New(os.Stdout, "[collector-service] ", log.LstdFlags)
     cfg := config.Load()
        
-	redisAddr := os.Getenv("REDIS_ADDR")
-    if redisAddr == "" {
-       redisAddr = "redis:6379"
-    }
-    stream := os.Getenv("REDIS_STREAM")
-    if stream == "" {
-	       stream = "telemetry"
-       }
-       group := os.Getenv("REDIS_GROUP")
-       if group == "" {
-	       group = "telemetry_group"
-       }
-	name := os.Getenv("REDIS_CONSUMER_NAME")
-       if name == "" {
-	       name = "Collector"
-       }
+	// Check if we should use HTTP message queue or Redis
+	useHTTPQueue := os.Getenv("USE_HTTP_QUEUE")
+	var queue shared.MessageQueue
+	var err error
+	
+	if useHTTPQueue == "true" {
+		// Use HTTP message queue
+		queueAddr := os.Getenv("MSG_QUEUE_ADDR")
+		if queueAddr == "" {
+			queueAddr = "http://msg_queue:8080"
+		}
+		topic := os.Getenv("MSG_QUEUE_TOPIC")
+		if topic == "" {
+			topic = "telemetry"
+		}
+		group := os.Getenv("MSG_QUEUE_GROUP")
+		if group == "" {
+			group = "telemetry_group"
+		}
+		name := os.Getenv("MSG_QUEUE_CONSUMER_NAME")
+		if name == "" {
+			name = "collector"
+		}
 
-       queue, err := shared.NewRedisStreamQueue(redisAddr, stream, group, name)
-       if err != nil {
-	       logger.Fatalf("Failed to create Redis stream queue: %v", err)
-       }
+		queue, err = shared.NewHTTPMessageQueue(queueAddr, topic, group, name)
+		if err != nil {
+			logger.Fatalf("Failed to create HTTP message queue: %v", err)
+		}
+		logger.Printf("Using HTTP message queue at %s, topic=%s, group=%s, name=%s", queueAddr, topic, group, name)
+	} else {
+		// Use Redis (existing behavior)
+		redisAddr := os.Getenv("REDIS_ADDR")
+		if redisAddr == "" {
+			redisAddr = "redis:6379"
+		}
+		stream := os.Getenv("REDIS_STREAM")
+		if stream == "" {
+			stream = "telemetry"
+		}
+		group := os.Getenv("REDIS_GROUP")
+		if group == "" {
+			group = "telemetry_group"
+		}
+		name := os.Getenv("REDIS_CONSUMER_NAME")
+		if name == "" {
+			name = "Collector"
+		}
 
-       logger.Printf("Using Redis stream queue at %s, stream=%s, group=%s, name=%s", redisAddr, stream, group, name)
+		queue, err = shared.NewRedisStreamQueue(redisAddr, stream, group, name)
+		if err != nil {
+			logger.Fatalf("Failed to create Redis stream queue: %v", err)
+		}
+		logger.Printf("Using Redis stream queue at %s, stream=%s, group=%s, name=%s", redisAddr, stream, group, name)
+	}
 
 	influxURL := os.Getenv("INFLUXDB_URL")
 	if influxURL == "" {
