@@ -279,23 +279,54 @@ func (b *Broker) getPartition(topic string, partition int) (*Partition, error) {
 	return p, nil
 }
 
+// getOwnedPartition returns the first partition owned by this broker for the given topic
+func (b *Broker) getOwnedPartition(topic string) (int, error) {
+	b.partitionsMu.RLock()
+	defer b.partitionsMu.RUnlock()
+	pm, ok := b.partitions[topic]
+	if !ok {
+		return -1, fmt.Errorf("unknown topic")
+	}
+	
+	// Return the first owned partition
+	for partition := range pm {
+		return partition, nil
+	}
+	
+	return -1, fmt.Errorf("no partitions owned for topic")
+}
+
 // produceHandler: POST /produce?topic=foo&partition=0
 // body: raw payload (text) or JSON {"payload":"..."}
+// If partition is not specified, auto-assign to an owned partition
 func (b *Broker) produceHandler(w http.ResponseWriter, r *http.Request) {
 	topic := r.URL.Query().Get("topic")
 	partStr := r.URL.Query().Get("partition")
-	if topic == "" || partStr == "" {
-		http.Error(w, "topic and partition required", http.StatusBadRequest)
+	if topic == "" {
+		http.Error(w, "topic required", http.StatusBadRequest)
 		return
 	}
-	part, err := strconv.Atoi(partStr)
-	if err != nil {
-		http.Error(w, "bad partition", http.StatusBadRequest)
-		return
-	}
-	if !b.owns(topic, part) {
-		http.Error(w, "partition not owned", http.StatusBadRequest)
-		return
+	
+	var part int
+	var err error
+	
+	if partStr == "" {
+		// Auto-assign partition to any owned partition for this topic
+		part, err = b.getOwnedPartition(topic)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("no owned partitions for topic %s: %v", topic, err), http.StatusBadRequest)
+			return
+		}
+	} else {
+		part, err = strconv.Atoi(partStr)
+		if err != nil {
+			http.Error(w, "bad partition", http.StatusBadRequest)
+			return
+		}
+		if !b.owns(topic, part) {
+			http.Error(w, "partition not owned", http.StatusBadRequest)
+			return
+		}
 	}
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -334,6 +365,7 @@ func (b *Broker) produceHandler(w http.ResponseWriter, r *http.Request) {
 
 // consumeHandler: GET /consume?topic=foo&partition=0&group=g1
 // uses Server-Sent Events (text/event-stream)
+// If partition is not specified, auto-assign to an owned partition
 func (b *Broker) consumeHandler(w http.ResponseWriter, r *http.Request) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
@@ -343,18 +375,31 @@ func (b *Broker) consumeHandler(w http.ResponseWriter, r *http.Request) {
 	topic := r.URL.Query().Get("topic")
 	partStr := r.URL.Query().Get("partition")
 	group := r.URL.Query().Get("group")
-	if topic == "" || partStr == "" || group == "" {
-		http.Error(w, "topic, partition and group required", http.StatusBadRequest)
+	if topic == "" || group == "" {
+		http.Error(w, "topic and group required", http.StatusBadRequest)
 		return
 	}
-	part, err := strconv.Atoi(partStr)
-	if err != nil {
-		http.Error(w, "bad partition", http.StatusBadRequest)
-		return
-	}
-	if !b.owns(topic, part) {
-		http.Error(w, "partition not owned", http.StatusBadRequest)
-		return
+	
+	var part int
+	var err error
+	
+	if partStr == "" {
+		// Auto-assign partition to any owned partition for this topic
+		part, err = b.getOwnedPartition(topic)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("no owned partitions for topic %s: %v", topic, err), http.StatusBadRequest)
+			return
+		}
+	} else {
+		part, err = strconv.Atoi(partStr)
+		if err != nil {
+			http.Error(w, "bad partition", http.StatusBadRequest)
+			return
+		}
+		if !b.owns(topic, part) {
+			http.Error(w, "partition not owned", http.StatusBadRequest)
+			return
+		}
 	}
 	p, err := b.getPartition(topic, part)
 	if err != nil {

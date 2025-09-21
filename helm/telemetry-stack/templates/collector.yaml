@@ -1,0 +1,19 @@
+{{- if .Values.collector.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.collector.name }}
+  labels:
+    app: {{ .Values.collector.name }}
+    chart: {{ include "telemetry-stack.chart" . }}
+    release: {{ .Release.Name }}
+spec:
+  type: {{ .Values.collector.service.type }}
+  selector:
+    app: {{ .Values.collector.name }}
+    release: {{ .Release.Name }}
+  ports:
+  - protocol: TCP
+    port: {{ .Values.collector.service.port }}
+    targetPort: {{ .Values.collector.service.port }}
+{{- end }}

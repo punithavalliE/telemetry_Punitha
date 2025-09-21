@@ -1,0 +1,6 @@
+apiVersion: v2
+name: telemetry-stack
+description: A Helm chart for GPU telemetry monitoring stack
+type: application
+version: 0.1.0
+appVersion: "1.0.0"

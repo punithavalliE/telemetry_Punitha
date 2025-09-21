@@ -1,0 +1,19 @@
+{{- if .Values.streamer.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.streamer.name }}
+  labels:
+    app: {{ .Values.streamer.name }}
+    chart: {{ include "telemetry-stack.chart" . }}
+    release: {{ .Release.Name }}
+spec:
+  type: {{ .Values.streamer.service.type }}
+  selector:
+    app: {{ .Values.streamer.name }}
+    release: {{ .Release.Name }}
+  ports:
+  - protocol: TCP
+    port: {{ .Values.streamer.service.port }}
+    targetPort: {{ .Values.streamer.service.port }}
+{{- end }}

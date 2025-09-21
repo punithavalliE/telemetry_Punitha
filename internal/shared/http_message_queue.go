@@ -43,10 +43,8 @@ func NewHTTPMessageQueue(baseURL, topic, group, name string) (*HTTPMessageQueue,
 
 // Publish sends a message to the queue
 func (h *HTTPMessageQueue) Publish(topic string, payload []byte) error {
-	// Use partition 0 for simplicity - in production you might want to hash the payload
-	partition := 0
-	
-	url := fmt.Sprintf("%s/produce?topic=%s&partition=%d", h.baseURL, topic, partition)
+	// Let the broker auto-assign partition - don't specify partition parameter
+	url := fmt.Sprintf("%s/produce?topic=%s", h.baseURL, topic)
 	
 	// Create request body with payload
 	reqBody := map[string]string{
@@ -73,10 +71,8 @@ func (h *HTTPMessageQueue) Publish(topic string, payload []byte) error {
 
 // Subscribe starts consuming messages from the queue
 func (h *HTTPMessageQueue) Subscribe(handler func(string, []byte, string) error) error {
-	// Use partition 0 for simplicity
-	partition := 0
-	
-	url := fmt.Sprintf("%s/consume?topic=%s&partition=%d&group=%s", h.baseURL, h.topic, partition, h.group)
+	// Let the broker auto-assign partition - don't specify partition parameter
+	url := fmt.Sprintf("%s/consume?topic=%s&group=%s", h.baseURL, h.topic, h.group)
 	
 	// Create context for cancellation
 	ctx := context.Background()
@@ -126,7 +122,7 @@ func (h *HTTPMessageQueue) Subscribe(handler func(string, []byte, string) error)
 					fmt.Printf("Message handler error: %v\n", err)
 				} else {
 					// Acknowledge the message only if handler succeeded
-					if err := h.ackMessage(msg.Topic, partition, msg.ID); err != nil {
+					if err := h.ackMessage(msg.Topic, msg.Partition, msg.ID); err != nil {
 						fmt.Printf("Failed to ack message %s: %v\n", msg.ID, err)
 					}
 				}

@@ -1,0 +1,56 @@
+{{- if .Values.api.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.api.name }}
+  labels:
+    app: {{ .Values.api.name }}
+    chart: {{ include "telemetry-stack.chart" . }}
+    release: {{ .Release.Name }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ .Values.api.name }}
+      release: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.api.name }}
+        release: {{ .Release.Name }}
+    spec:
+      containers:
+      - name: {{ .Values.api.name }}
+        image: "{{ .Values.api.image.repository }}:{{ .Values.api.image.tag }}"
+        imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+        ports:
+        - containerPort: {{ .Values.api.service.port }}
+        env:
+        - name: INFLUXDB_URL
+          value: {{ .Values.api.env.influxdbUrl | quote }}
+        - name: INFLUXDB_TOKEN
+          value: {{ .Values.api.env.influxdbToken | quote }}
+        - name: INFLUXDB_ORG
+          value: {{ .Values.api.env.influxdbOrg | quote }}
+        - name: INFLUXDB_BUCKET
+          value: {{ .Values.api.env.influxdbBucket | quote }}
+        livenessProbe:
+          httpGet:
+            path: /gpus
+            port: {{ .Values.api.service.port }}
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /gpus
+            port: {{ .Values.api.service.port }}
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "250m"
+          limits:
+            memory: "128Mi"
+            cpu: "500m"
+{{- end }}

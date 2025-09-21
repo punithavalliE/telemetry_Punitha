@@ -1,0 +1,117 @@
+{{- if and .Values.msgQueue.enabled .Values.msgQueue.useStatefulSet }}
+# Headless service for StatefulSet
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.msgQueue.name }}-headless
+  labels:
+    app: {{ .Values.msgQueue.name }}
+    chart: {{ include "telemetry-stack.chart" . }}
+    release: {{ .Release.Name }}
+spec:
+  clusterIP: None
+  selector:
+    app: {{ .Values.msgQueue.name }}
+    release: {{ .Release.Name }}
+  ports:
+  - protocol: TCP
+    port: {{ .Values.msgQueue.service.port }}
+    targetPort: {{ .Values.msgQueue.service.port }}
+---
+# StatefulSet for msg-queue with proper broker indexing
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ .Values.msgQueue.name }}
+  labels:
+    app: {{ .Values.msgQueue.name }}
+    chart: {{ include "telemetry-stack.chart" . }}
+    release: {{ .Release.Name }}
+spec:
+  serviceName: {{ .Values.msgQueue.name }}-headless
+  replicas: {{ .Values.msgQueue.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ .Values.msgQueue.name }}
+      release: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.msgQueue.name }}
+        release: {{ .Release.Name }}
+    spec:
+      containers:
+      - name: {{ .Values.msgQueue.name }}
+        image: "{{ .Values.msgQueue.image.repository }}:{{ .Values.msgQueue.image.tag }}"
+        imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+        ports:
+        - containerPort: {{ .Values.msgQueue.service.port }}
+          name: http
+        env:
+        - name: PORT
+          value: {{ .Values.msgQueue.service.port | quote }}
+        - name: BROKER_COUNT
+          value: {{ .Values.msgQueue.replicaCount | quote }}
+        - name: TOPICS
+          value: {{ .Values.msgQueue.env.topics | quote }}
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        # Initialize script to extract broker index from pod name
+        command: ["/bin/sh"]
+        args:
+        - -c
+        - |
+          # Extract the ordinal from the pod name and set BROKER_INDEX
+          # Pod names are: msg-queue-0, msg-queue-1, msg-queue-2, etc.
+          BROKER_INDEX="${POD_NAME##*-}"
+          export BROKER_INDEX
+          echo "Pod name: $POD_NAME"
+          echo "Starting broker with BROKER_INDEX=$BROKER_INDEX, BROKER_COUNT=$BROKER_COUNT"
+          exec ./msg_queue
+        # Health checks
+        readinessProbe:
+          httpGet:
+            path: /topics
+            port: {{ .Values.msgQueue.service.port }}
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        livenessProbe:
+          httpGet:
+            path: /topics
+            port: {{ .Values.msgQueue.service.port }}
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 3
+        # Resource limits
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "300m"
+        {{- if .Values.msgQueue.persistence.enabled }}
+        volumeMounts:
+        - name: msg-queue-storage
+          mountPath: /root/data
+        {{- end }}
+  {{- if .Values.msgQueue.persistence.enabled }}
+  # Volume claim templates for persistent storage per replica
+  volumeClaimTemplates:
+  - metadata:
+      name: msg-queue-storage
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      {{- if .Values.msgQueue.persistence.storageClass }}
+      storageClassName: {{ .Values.msgQueue.persistence.storageClass }}
+      {{- end }}
+      resources:
+        requests:
+          storage: {{ .Values.msgQueue.persistence.size }}
+  {{- end }}
+{{- end }}

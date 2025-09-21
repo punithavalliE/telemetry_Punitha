@@ -1,0 +1,19 @@
+{{- if .Values.msgQueue.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.msgQueue.name }}
+  labels:
+    app: {{ .Values.msgQueue.name }}
+    chart: {{ include "telemetry-stack.chart" . }}
+    release: {{ .Release.Name }}
+spec:
+  type: {{ .Values.msgQueue.service.type }}
+  selector:
+    app: {{ .Values.msgQueue.name }}
+    release: {{ .Release.Name }}
+  ports:
+  - protocol: TCP
+    port: {{ .Values.msgQueue.service.port }}
+    targetPort: {{ .Values.msgQueue.service.port }}
+{{- end }}

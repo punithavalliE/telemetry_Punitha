@@ -1,0 +1,66 @@
+{{- if .Values.influxdb.enabled }}
+{{- if .Values.influxdb.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: influxdb-data
+  labels:
+    app: influxdb
+    chart: {{ include "telemetry-stack.chart" . }}
+    release: {{ .Release.Name }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ .Values.influxdb.persistence.size }}
+---
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: influxdb
+  labels:
+    app: influxdb
+    chart: {{ include "telemetry-stack.chart" . }}
+    release: {{ .Release.Name }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: influxdb
+      release: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app: influxdb
+        release: {{ .Release.Name }}
+    spec:
+      containers:
+      - name: influxdb
+        image: "{{ .Values.influxdb.image.repository }}:{{ .Values.influxdb.image.tag }}"
+        ports:
+        - containerPort: {{ .Values.influxdb.service.port }}
+        env:
+        - name: DOCKER_INFLUXDB_INIT_MODE
+          value: {{ .Values.influxdb.env.initMode }}
+        - name: DOCKER_INFLUXDB_INIT_USERNAME
+          value: {{ .Values.influxdb.env.adminUser }}
+        - name: DOCKER_INFLUXDB_INIT_PASSWORD
+          value: {{ .Values.influxdb.env.adminPassword }}
+        - name: DOCKER_INFLUXDB_INIT_ORG
+          value: {{ .Values.influxdb.env.org }}
+        - name: DOCKER_INFLUXDB_INIT_BUCKET
+          value: {{ .Values.influxdb.env.bucket }}
+        - name: DOCKER_INFLUXDB_INIT_ADMIN_TOKEN
+          value: {{ .Values.influxdb.env.adminToken }}
+        {{- if .Values.influxdb.persistence.enabled }}
+        volumeMounts:
+        - name: influxdb-data
+          mountPath: /var/lib/influxdb2
+      volumes:
+      - name: influxdb-data
+        persistentVolumeClaim:
+          claimName: influxdb-data
+        {{- end }}
+{{- end }}

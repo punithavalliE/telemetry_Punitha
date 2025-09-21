@@ -1,0 +1,42 @@
+{{- if .Values.api.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.api.name }}
+  labels:
+    app: {{ .Values.api.name }}
+    chart: {{ include "telemetry-stack.chart" . }}
+    release: {{ .Release.Name }}
+spec:
+  type: {{ .Values.api.service.type }}
+  selector:
+    app: {{ .Values.api.name }}
+    release: {{ .Release.Name }}
+  ports:
+  - name: http
+    protocol: TCP
+    port: {{ .Values.api.service.port }}
+    targetPort: {{ .Values.api.service.port }}
+{{- if .Values.api.nodePort.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.api.name }}-nodeport
+  labels:
+    app: {{ .Values.api.name }}
+    chart: {{ include "telemetry-stack.chart" . }}
+    release: {{ .Release.Name }}
+spec:
+  type: NodePort
+  selector:
+    app: {{ .Values.api.name }}
+    release: {{ .Release.Name }}
+  ports:
+  - name: http
+    protocol: TCP
+    port: {{ .Values.api.service.port }}
+    targetPort: {{ .Values.api.service.port }}
+    nodePort: {{ .Values.api.nodePort.port }}
+{{- end }}
+{{- end }}

@@ -1,0 +1,87 @@
+{{- if .Values.streamer.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.streamer.name }}
+  labels:
+    app: {{ .Values.streamer.name }}
+    chart: {{ include "telemetry-stack.chart" . }}
+    release: {{ .Release.Name }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ .Values.streamer.name }}
+      release: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.streamer.name }}
+        release: {{ .Release.Name }}
+    spec:
+      containers:
+      - name: {{ .Values.streamer.name }}
+        image: "{{ .Values.streamer.image.repository }}:{{ .Values.streamer.image.tag }}"
+        imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+        env:
+        - name: CSV_PATH
+          value: {{ .Values.streamer.env.csvPath | quote }}
+        - name: CSV_DELAY_MS
+          value: {{ .Values.streamer.env.csvDelayMs | quote }}
+        - name: USE_HTTP_QUEUE
+          value: {{ .Values.streamer.env.useHttpQueue | quote }}
+        - name: PORT
+          value: {{ .Values.streamer.env.port | quote }}
+        - name: MSG_QUEUE_ADDR
+          value: {{ .Values.streamer.env.msgQueueAddr | quote }}
+        - name: MSG_QUEUE_TOPIC
+          value: {{ .Values.streamer.env.msgQueueTopic | quote }}
+        - name: MSG_QUEUE_GROUP
+          value: {{ .Values.streamer.env.msgQueueGroup | quote }}
+        - name: MSG_QUEUE_PRODUCER_NAME
+          value: {{ .Values.streamer.env.msgQueueProducerName | quote }}
+        ports:
+        - containerPort: {{ .Values.streamer.service.port }}
+        # Readiness probe - check if streamer service is ready
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: {{ .Values.streamer.service.port }}
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        # Liveness probe - check if streamer service is alive
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: {{ .Values.streamer.service.port }}
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 3
+        # Init container to wait for message queue to be ready
+      initContainers:
+      - name: wait-for-msg-queue
+        image: busybox:1.35
+        command:
+        - sh
+        - -c
+        - |
+          echo "Waiting for message queue to be ready..."
+          until wget -q --spider {{ .Values.streamer.env.msgQueueAddr }}/topics; do
+            echo "Message queue not ready, waiting..."
+            sleep 2
+          done
+          echo "Message queue is ready!"
+        {{- if .Values.streamer.volume.enabled }}
+        volumeMounts:
+        - name: csv-data
+          mountPath: /data
+      volumes:
+      - name: csv-data
+        hostPath:
+          path: {{ .Values.streamer.volume.hostPath }}
+          type: Directory
+        {{- end }}
+{{- end }}

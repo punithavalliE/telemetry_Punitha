@@ -1,0 +1,65 @@
+{{- if .Values.collector.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.collector.name }}
+  labels:
+    app: {{ .Values.collector.name }}
+    chart: {{ include "telemetry-stack.chart" . }}
+    release: {{ .Release.Name }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ .Values.collector.name }}
+      release: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.collector.name }}
+        release: {{ .Release.Name }}
+    spec:
+      initContainers:
+      - name: wait-for-msg-queue
+        image: busybox:1.35
+        command: ['sh', '-c', 'until nc -z msg-queue 8080; do echo waiting for msg-queue; sleep 2; done;']
+      containers:
+      - name: {{ .Values.collector.name }}
+        image: "{{ .Values.collector.image.repository }}:{{ .Values.collector.image.tag }}"
+        imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+        ports:
+        - containerPort: {{ .Values.collector.service.port }}
+        env:
+        - name: PORT
+          value: "{{ .Values.collector.service.port }}"
+        - name: INFLUXDB_URL
+          value: {{ .Values.collector.env.influxdbUrl | quote }}
+        - name: INFLUXDB_TOKEN
+          value: {{ .Values.collector.env.influxdbToken | quote }}
+        - name: INFLUXDB_ORG
+          value: {{ .Values.collector.env.influxdbOrg | quote }}
+        - name: INFLUXDB_BUCKET
+          value: {{ .Values.collector.env.influxdbBucket | quote }}
+        - name: USE_HTTP_QUEUE
+          value: "true"
+        - name: MSG_QUEUE_ADDR
+          value: {{ .Values.collector.env.msgQueueAddr | quote }}
+        - name: MSG_QUEUE_TOPIC
+          value: {{ .Values.collector.env.msgQueueTopic | quote }}
+        - name: MSG_QUEUE_GROUP
+          value: {{ .Values.collector.env.msgQueueGroup | quote }}
+        - name: MSG_QUEUE_CONSUMER_NAME
+          value: {{ .Values.collector.env.msgQueueConsumerName | quote }}
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: {{ .Values.collector.service.port }}
+          initialDelaySeconds: 10
+          periodSeconds: 5
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: {{ .Values.collector.service.port }}
+          initialDelaySeconds: 30
+          periodSeconds: 10
+{{- end }}

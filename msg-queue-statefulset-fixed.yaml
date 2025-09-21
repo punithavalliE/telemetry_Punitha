@@ -1,0 +1,104 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: msg-queue
+  labels:
+    app: msg-queue
+spec:
+  serviceName: msg-queue-headless
+  replicas: 2
+  selector:
+    matchLabels:
+      app: msg-queue
+  template:
+    metadata:
+      labels:
+        app: msg-queue
+    spec:
+      containers:
+      - name: msg-queue
+        image: msg-queue:latest
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 8080
+          name: http
+        env:
+        - name: PORT
+          value: "8080"
+        - name: BROKER_COUNT
+          value: "2"
+        - name: TOPICS
+          value: "telemetry:4"
+        command: ["/bin/sh"]
+        args:
+        - -c
+        - |
+          # Extract the ordinal from the pod name using shell parameter expansion
+          # Pod names are: msg-queue-0, msg-queue-1, msg-queue-2, etc.
+          export BROKER_INDEX="${HOSTNAME##*-}"
+          echo "Starting broker with BROKER_INDEX=$BROKER_INDEX, BROKER_COUNT=$BROKER_COUNT"
+          exec ./msg_queue
+        readinessProbe:
+          httpGet:
+            path: /topics
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        livenessProbe:
+          httpGet:
+            path: /topics
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 3
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 300m
+            memory: 512Mi
+        volumeMounts:
+        - name: msg-queue-storage
+          mountPath: /root/data
+  volumeClaimTemplates:
+  - metadata:
+      name: msg-queue-storage
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      resources:
+        requests:
+          storage: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: msg-queue-headless
+  labels:
+    app: msg-queue
+spec:
+  clusterIP: None
+  selector:
+    app: msg-queue
+  ports:
+  - port: 8080
+    targetPort: 8080
+    name: http
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: msg-queue
+  labels:
+    app: msg-queue
+spec:
+  type: LoadBalancer
+  selector:
+    app: msg-queue
+  ports:
+  - port: 8080
+    targetPort: 8080
+    name: http
