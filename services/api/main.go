@@ -86,7 +86,6 @@ func main() {
 	// @Failure 404 {object} ErrorResponse
 	// @Failure 500 {object} ErrorResponse
 	// @Router /api/v1/gpus/{id}/telemetry [get]
-	// New endpoint: GET /api/v1/gpus/{id}/telemetry
 	http.HandleFunc("/api/v1/gpus/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			w.WriteHeader(http.StatusMethodNotAllowed)

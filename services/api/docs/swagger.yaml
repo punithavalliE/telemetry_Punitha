@@ -12,5 +12,258 @@ info:
   termsOfService: http://swagger.io/terms/
   title: Telemetry API
   version: "1.0"
-paths: {}
+paths:
+  /gpus:
+    get:
+      description: Get the 10 most recent telemetry records
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/TelemetryDataResponse'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+      summary: Get recent telemetry data (legacy)
+      tags:
+      - legacy
+  /api/v1/gpus:
+    get:
+      description: Get a list of all available GPUs with their metadata
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/GPUListResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+      summary: List available GPUs
+      tags:
+      - gpus
+  /api/v1/gpus/{id}/telemetry:
+    get:
+      description: Get telemetry data for a specific GPU with optional time range filtering
+      parameters:
+      - description: GPU ID (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Start time in RFC3339 format (e.g., 2023-01-01T00:00:00Z)
+        in: query
+        name: start_time
+        type: string
+      - description: End time in RFC3339 format (e.g., 2023-01-01T23:59:59Z)
+        in: query
+        name: end_time
+        type: string
+      - description: 'Maximum number of records to return (default: 100)'
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/TelemetryResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+      summary: Get GPU telemetry data
+      tags:
+      - telemetry
+  /api/v1/hosts:
+    get:
+      description: Get a list of all hosts with GPU count
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/HostListResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+      summary: List available hosts
+      tags:
+      - infrastructure
+  /api/v1/namespaces:
+    get:
+      description: Get a list of all Kubernetes namespaces with GPU count
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/NamespaceListResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+      summary: List available namespaces
+      tags:
+      - infrastructure
 swagger: "2.0"
+definitions:
+  ErrorResponse:
+    properties:
+      error:
+        example: Failed to query data
+        type: string
+      message:
+        example: Additional error details
+        type: string
+    type: object
+  GPUInfo:
+    properties:
+      container:
+        example: ""
+        type: string
+      device_id:
+        example: nvidia0
+        type: string
+      gpu_id:
+        example: "0"
+        type: string
+      hostname:
+        example: mtv5-dgx1-hgpu-031
+        type: string
+      last_seen:
+        example: "2025-07-18T20:42:34Z"
+        type: string
+      model_name:
+        example: NVIDIA H100 80GB HBM3
+        type: string
+      namespace:
+        example: ""
+        type: string
+      pod:
+        example: ""
+        type: string
+      uuid:
+        example: GPU-5fd4f087-86f3-7a43-b711-4771313afc50
+        type: string
+    type: object
+  GPUListResponse:
+    properties:
+      count:
+        example: 2
+        type: integer
+      gpus:
+        items:
+          $ref: '#/definitions/GPUInfo'
+        type: array
+    type: object
+  HostInfo:
+    properties:
+      gpu_count:
+        example: 8
+        type: integer
+      hostname:
+        example: mtv5-dgx1-hgpu-031
+        type: string
+    type: object
+  HostListResponse:
+    properties:
+      count:
+        example: 1
+        type: integer
+      hosts:
+        items:
+          $ref: '#/definitions/HostInfo'
+        type: array
+    type: object
+  NamespaceInfo:
+    properties:
+      gpu_count:
+        example: 4
+        type: integer
+      namespace:
+        example: default
+        type: string
+    type: object
+  NamespaceListResponse:
+    properties:
+      count:
+        example: 2
+        type: integer
+      namespaces:
+        items:
+          $ref: '#/definitions/NamespaceInfo'
+        type: array
+    type: object
+  TelemetryDataResponse:
+    properties:
+      container:
+        example: ""
+        type: string
+      device_id:
+        example: nvidia0
+        type: string
+      gpu_id:
+        example: "0"
+        type: string
+      hostname:
+        example: mtv5-dgx1-hgpu-031
+        type: string
+      labels_raw:
+        example: 'DCGM_FI_DRIVER_VERSION="535.129.03"'
+        type: string
+      metric:
+        example: DCGM_FI_DEV_GPU_UTIL
+        type: string
+      model_name:
+        example: NVIDIA H100 80GB HBM3
+        type: string
+      namespace:
+        example: ""
+        type: string
+      pod:
+        example: ""
+        type: string
+      time:
+        example: "2025-07-18T20:42:34Z"
+        type: string
+      uuid:
+        example: GPU-5fd4f087-86f3-7a43-b711-4771313afc50
+        type: string
+      value:
+        example: 85.5
+        type: number
+    type: object
+  TelemetryResponse:
+    properties:
+      count:
+        example: 100
+        type: integer
+      data:
+        items:
+          $ref: '#/definitions/TelemetryDataResponse'
+        type: array
+      gpu_id:
+        example: nvidia0
+        type: string
+    type: object
