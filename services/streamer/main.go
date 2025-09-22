@@ -10,6 +10,7 @@ import (
 
 	"github.com/example/telemetry/internal/shared"
 	"github.com/example/telemetry/internal/telemetry"
+	"github.com/example/telemetry/internal/metrics"
 	"github.com/example/telemetry/config"
 )
 
@@ -22,6 +23,11 @@ type StreamerService struct {
 
 func NewStreamerService() *StreamerService {
        logger := log.New(os.Stdout, "[streamer-service] ", log.LstdFlags)
+       
+       // Initialize Prometheus metrics
+       metrics.InitMetrics("streamer-service")
+       logger.Println("Prometheus metrics initialized")
+       
        cfg := config.Load()
 
        // Check if we should use HTTP message queue or Redis
@@ -114,6 +120,10 @@ func (ss *StreamerService) publishTelemetryHandler(w http.ResponseWriter, r *htt
 	       return
        }
 
+       // Record successful message production
+       metrics.RecordMessageProduced("streamer-service", "telemetry")
+       metrics.RecordTelemetryDataPoint("streamer-service", "published_message")
+       
        ss.logger.Printf("Published telemetry: %+v", data)
        w.Header().Set("Content-Type", "application/json")
        json.NewEncoder(w).Encode(map[string]string{"status": "published"})
@@ -127,8 +137,11 @@ func (ps *StreamerService) healthHandler(w http.ResponseWriter, r *http.Request)
 
 
 func (ps *StreamerService) Start() {
-	http.HandleFunc("/telemetry", ps.publishTelemetryHandler)
-	http.HandleFunc("/health", ps.healthHandler)
+	http.HandleFunc("/telemetry", metrics.HTTPMiddleware("streamer-service", ps.publishTelemetryHandler))
+	http.HandleFunc("/health", metrics.HTTPMiddleware("streamer-service", ps.healthHandler))
+	
+	// Add Prometheus metrics endpoint
+	http.Handle("/metrics", metrics.MetricsHandler())
 
 	port := os.Getenv("PORT")
 	if port == "" {

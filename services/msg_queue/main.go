@@ -28,6 +28,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/example/telemetry/internal/metrics"
 )
 
 const (
@@ -482,6 +484,10 @@ func (b *Broker) topicsHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
+	// Initialize Prometheus metrics
+	metrics.InitMetrics("msg-queue-service")
+	log.Println("Prometheus metrics initialized")
+	
 	// Configuration (could be flags/env)
 	topicsConf := map[string]int{
 		"events":  8,
@@ -533,6 +539,9 @@ func main() {
 	mux.HandleFunc("/consume", broker.consumeHandler)
 	mux.HandleFunc("/ack", broker.ackHandler)
 	mux.HandleFunc("/topics", broker.topicsHandler)
+	
+	// Add Prometheus metrics endpoint
+	mux.Handle("/metrics", metrics.MetricsHandler())
 
 	port := os.Getenv("PORT")
 	if port == "" {

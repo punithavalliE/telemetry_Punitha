@@ -35,6 +35,10 @@ spec:
       labels:
         app: {{ .Values.msgQueue.name }}
         release: {{ .Release.Name }}
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "{{ .Values.msgQueue.service.port }}"
+        prometheus.io/path: "/metrics"
     spec:
       containers:
       - name: {{ .Values.msgQueue.name }}

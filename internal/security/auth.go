@@ -10,8 +10,9 @@ import (
 // APIKeyMiddleware validates API keys for incoming requests
 func APIKeyMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Skip auth for health checks and Swagger documentation
+		// Skip auth for health checks, metrics, and Swagger documentation
 		if r.URL.Path == "/health" ||
+			r.URL.Path == "/metrics" ||
 			r.URL.Path == "/topics" ||
 			strings.HasPrefix(r.URL.Path, "/swagger/") ||
 			r.URL.Path == "/swagger" ||

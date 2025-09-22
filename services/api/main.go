@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/example/telemetry/internal/influx"
+	"github.com/example/telemetry/internal/metrics"
 	"github.com/example/telemetry/internal/security"
 	"github.com/example/telemetry/internal/telemetry"
 	_ "github.com/example/telemetry/services/api/docs"
@@ -42,6 +43,10 @@ import (
 func main() {
 	logger := log.New(os.Stdout, "[api-service] ", log.LstdFlags)
 
+	// Initialize Prometheus metrics
+	metrics.InitMetrics("api-service")
+	logger.Println("Prometheus metrics initialized")
+
 	influxURL := os.Getenv("INFLUXDB_URL")
 	if influxURL == "" {
 		influxURL = "http://influxdb:8086"
@@ -66,10 +71,13 @@ func main() {
 	mux := http.NewServeMux()
 
 	// Public endpoints (no auth required)
-	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/health", metrics.HTTPMiddleware("api-service", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("API service healthy"))
-	})
+	}))
+
+	// Prometheus metrics endpoint
+	mux.Handle("/metrics", metrics.MetricsHandler())
 
 	// Swagger endpoint (public for documentation)
 	mux.HandleFunc("/swagger/", httpSwagger.WrapHandler)
@@ -81,17 +89,24 @@ func main() {
 	// @Success 200 {array} TelemetryDataResponse
 	// @Failure 500 {object} ErrorResponse
 	// @Router /gpus [get]
-	mux.HandleFunc("/gpus", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/gpus", metrics.HTTPMiddleware("api-service", func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		
 		records, err := influxClient.QueryRecentTelemetry(10)
 		if err != nil {
 			logger.Printf("Failed to query InfluxDB: %v", err)
+			metrics.RecordDatabaseOperation("api-service", "query", "error", time.Since(start))
 			w.WriteHeader(http.StatusInternalServerError)
 			w.Write([]byte("Failed to query data"))
 			return
 		}
+		
+		metrics.RecordDatabaseOperation("api-service", "query", "success", time.Since(start))
+		metrics.RecordTelemetryDataPoint("api-service", "gpu_data")
+		
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(records)
-	})
+	}))
 
 	// @Summary Get GPU telemetry data
 	// @Description Get telemetry data for a specific GPU with optional time range filtering

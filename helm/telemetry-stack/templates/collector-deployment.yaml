@@ -18,6 +18,10 @@ spec:
       labels:
         app: {{ .Values.collector.name }}
         release: {{ .Release.Name }}
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8081"
+        prometheus.io/path: "/metrics"
     spec:
       initContainers:
       - name: wait-for-msg-queue

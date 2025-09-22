@@ -18,6 +18,10 @@ spec:
       labels:
         app: {{ .Values.streamer.name }}
         release: {{ .Release.Name }}
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "{{ .Values.streamer.service.port }}"
+        prometheus.io/path: "/metrics"
     spec:
       containers:
       - name: {{ .Values.streamer.name }}

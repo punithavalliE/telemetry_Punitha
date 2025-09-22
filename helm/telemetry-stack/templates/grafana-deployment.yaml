@@ -1,0 +1,131 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "telemetry-stack.fullname" . }}-grafana
+  labels:
+    app: grafana
+    {{- include "telemetry-stack.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: grafana
+      {{- include "telemetry-stack.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        app: grafana
+        {{- include "telemetry-stack.selectorLabels" . | nindent 8 }}
+    spec:
+    spec:
+      serviceAccountName: {{ include "telemetry-stack.serviceAccountName" . }}
+      containers:
+      - name: grafana
+        image: grafana/grafana:10.1.0
+        ports:
+        - containerPort: 3000
+          name: grafana
+        env:
+        - name: GF_SECURITY_ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "telemetry-stack.fullname" . }}-grafana-secret
+              key: admin-password
+        - name: GF_INSTALL_PLUGINS
+          value: "grafana-piechart-panel"
+        volumeMounts:
+        - name: grafana-storage
+          mountPath: /var/lib/grafana
+        - name: grafana-config
+          mountPath: /etc/grafana/provisioning/datasources
+        - name: grafana-dashboards-config
+          mountPath: /etc/grafana/provisioning/dashboards
+        - name: grafana-dashboards
+          mountPath: /var/lib/grafana/dashboards
+        resources:
+          limits:
+            cpu: 500m
+            memory: 1Gi
+          requests:
+            cpu: 100m
+            memory: 512Mi
+        livenessProbe:
+          httpGet:
+            path: /api/health
+            port: 3000
+          initialDelaySeconds: 30
+          periodSeconds: 15
+        readinessProbe:
+          httpGet:
+            path: /api/health
+            port: 3000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+      volumes:
+      - name: grafana-storage
+        {{- if .Values.grafana.persistence.enabled }}
+        persistentVolumeClaim:
+          claimName: {{ include "telemetry-stack.fullname" . }}-grafana-pvc
+        {{- else }}
+        emptyDir: {}
+        {{- end }}
+      - name: grafana-config
+        configMap:
+          name: {{ include "telemetry-stack.fullname" . }}-grafana-datasource
+      - name: grafana-dashboards-config
+        configMap:
+          name: {{ include "telemetry-stack.fullname" . }}-grafana-dashboards-config
+      - name: grafana-dashboards
+        configMap:
+          name: {{ include "telemetry-stack.fullname" . }}-grafana-dashboards
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "telemetry-stack.fullname" . }}-grafana-service
+  labels:
+    app: grafana
+    {{- include "telemetry-stack.labels" . | nindent 4 }}
+spec:
+  selector:
+    app: grafana
+    {{- include "telemetry-stack.selectorLabels" . | nindent 4 }}
+  ports:
+  - name: grafana
+    port: 3000
+    targetPort: 3000
+    protocol: TCP
+  type: {{ .Values.grafana.service.type }}
+  {{- if eq .Values.grafana.service.type "NodePort" }}
+  nodePort: {{ .Values.grafana.service.nodePort }}
+  {{- end }}
+---
+{{- if .Values.grafana.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "telemetry-stack.fullname" . }}-grafana-pvc
+  labels:
+    app: grafana
+    {{- include "telemetry-stack.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ .Values.grafana.persistence.size }}
+  {{- if .Values.grafana.persistence.storageClass }}
+  storageClassName: {{ .Values.grafana.persistence.storageClass }}
+  {{- end }}
+{{- end }}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ include "telemetry-stack.fullname" . }}-grafana-secret
+  labels:
+    app: grafana
+    {{- include "telemetry-stack.labels" . | nindent 4 }}
+type: Opaque
+data:
+  admin-password: {{ .Values.grafana.adminPassword | b64enc | quote }}

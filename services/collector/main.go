@@ -13,6 +13,7 @@ import (
 
 	"github.com/example/telemetry/internal/shared"
 	"github.com/example/telemetry/internal/telemetry"
+	"github.com/example/telemetry/internal/metrics"
 	"github.com/example/telemetry/config"
 	"github.com/example/telemetry/internal/influx"
 )
@@ -28,6 +29,11 @@ import (
 
 func NewCollectorService() *CollectorService {
 	logger := log.New(os.Stdout, "[collector-service] ", log.LstdFlags)
+	
+	// Initialize Prometheus metrics
+	metrics.InitMetrics("collector-service")
+	logger.Println("Prometheus metrics initialized")
+	
     cfg := config.Load()
        
 	// Check if we should use HTTP message queue or Redis
@@ -126,6 +132,9 @@ func NewCollectorService() *CollectorService {
 		   fmt.Fprintf(w, "OK")
 	   })
 	   
+	   // Add Prometheus metrics endpoint
+	   http.Handle("/metrics", metrics.MetricsHandler())
+	   
 	   go func() {
 		   cs.logger.Printf("Starting HTTP server on port %s", port)
 		   if err := http.ListenAndServe(":"+port, nil); err != nil {
@@ -136,8 +145,14 @@ func NewCollectorService() *CollectorService {
        // Start consuming telemetry messages from Redis stream
 	   go func() {
 	   _ = cs.queue.Subscribe(func(topic string, body []byte, id string) error {
+		   start := time.Now()
+		   
+		   // Record message consumption
+		   metrics.RecordMessageConsumed("collector-service", topic)
+		   
 		   if len(body) == 0 {
 			   cs.logger.Printf("Skipped empty message body for id %s", id)
+			   metrics.RecordMessageProcessing("collector-service", topic, time.Since(start))
 			   return nil
 		   }
 		   
@@ -145,12 +160,14 @@ func NewCollectorService() *CollectorService {
 		   var csvRecord []string
 		   if err := json.Unmarshal(body, &csvRecord); err != nil {
 			   cs.logger.Printf("Invalid CSV record for id %s: %v. Raw body: %s", id, err, string(body))
+			   metrics.RecordMessageProcessing("collector-service", topic, time.Since(start))
 			   return err
 		   }
 		   
 		   // Validate CSV record has enough fields
 		   if len(csvRecord) < 12 {
 			   cs.logger.Printf("Invalid CSV record length for id %s: expected 12 fields, got %d", id, len(csvRecord))
+			   metrics.RecordMessageProcessing("collector-service", topic, time.Since(start))
 			   return nil
 		   }
 		   
@@ -185,11 +202,20 @@ func NewCollectorService() *CollectorService {
 		   }
 		   
 		   cs.logger.Printf("Received telemetry [%s]: device=%s, metric=%s, value=%f", id, data.DeviceID, data.Metric, data.Value)
+		   
 		   // Write to InfluxDB
+		   dbStart := time.Now()
 		   err = cs.influx.WriteTelemetry(data)
 		   if err != nil {
 			   cs.logger.Printf("Failed to write to InfluxDB: %v", err)
+			   metrics.RecordDatabaseOperation("collector-service", "write", "error", time.Since(dbStart))
+		   } else {
+			   metrics.RecordDatabaseOperation("collector-service", "write", "success", time.Since(dbStart))
+			   metrics.RecordTelemetryDataPoint("collector-service", "gpu_metric")
 		   }
+		   
+		   // Record overall message processing time
+		   metrics.RecordMessageProcessing("collector-service", topic, time.Since(start))
 		   return err
 	   })
 	   }()

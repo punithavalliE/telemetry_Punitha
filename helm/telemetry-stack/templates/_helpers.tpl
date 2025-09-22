@@ -60,3 +60,14 @@ Secret name for telemetry authentication
 {{- printf "%s-auth" (include "telemetry-stack.fullname" .) }}
 {{- end }}
 {{- end }}
+
+{{/*
+Create the name of the service account to use
+*/}}
+{{- define "telemetry-stack.serviceAccountName" -}}
+{{- if .Values.serviceAccount.create }}
+{{- default (include "telemetry-stack.fullname" .) .Values.serviceAccount.name }}
+{{- else }}
+{{- default "default" .Values.serviceAccount.name }}
+{{- end }}
+{{- end }}
