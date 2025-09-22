@@ -1,5 +1,5 @@
 basePath: /
-host: localhost:8080
+host: localhost:30081
 info:
   contact:
     email: support@swagger.io
@@ -12,6 +12,20 @@ info:
   termsOfService: http://swagger.io/terms/
   title: Telemetry API
   version: "1.0"
+securityDefinitions:
+  ApiKeyAuth:
+    type: apiKey
+    name: X-API-Key
+    in: header
+    description: "API Key authentication using X-API-Key header"
+  BearerAuth:
+    type: apiKey
+    name: Authorization
+    in: header
+    description: "Bearer token authentication using Authorization header (format: Bearer <token>)"
+security:
+- ApiKeyAuth: []
+- BearerAuth: []
 paths:
   /gpus:
     get:
@@ -37,6 +51,9 @@ paths:
       description: Get a list of all available GPUs with their metadata
       produces:
       - application/json
+      security:
+      - ApiKeyAuth: []
+      - BearerAuth: []
       responses:
         "200":
           description: OK

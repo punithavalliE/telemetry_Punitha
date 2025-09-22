@@ -48,6 +48,12 @@ spec:
           value: {{ .Values.collector.env.msgQueueTopic | quote }}
         - name: MSG_QUEUE_GROUP
           value: {{ .Values.collector.env.msgQueueGroup | quote }}
+        # Security credentials from Kubernetes secrets
+        - name: SERVICE_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "telemetry-stack.secretName" . }}
+              key: service-token
         - name: MSG_QUEUE_CONSUMER_NAME
           value: {{ .Values.collector.env.msgQueueConsumerName | quote }}
         readinessProbe:

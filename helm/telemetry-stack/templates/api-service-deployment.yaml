@@ -34,15 +34,26 @@ spec:
           value: {{ .Values.api.env.influxdbOrg | quote }}
         - name: INFLUXDB_BUCKET
           value: {{ .Values.api.env.influxdbBucket | quote }}
+        # Security credentials from Kubernetes secrets
+        - name: API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "telemetry-stack.secretName" . }}
+              key: api-key
+        - name: SERVICE_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "telemetry-stack.secretName" . }}
+              key: service-token
         livenessProbe:
           httpGet:
-            path: /gpus
+            path: /health
             port: {{ .Values.api.service.port }}
           initialDelaySeconds: 30
           periodSeconds: 10
         readinessProbe:
           httpGet:
-            path: /gpus
+            path: /health
             port: {{ .Values.api.service.port }}
           initialDelaySeconds: 5
           periodSeconds: 5

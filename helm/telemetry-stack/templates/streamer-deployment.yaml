@@ -40,6 +40,12 @@ spec:
           value: {{ .Values.streamer.env.msgQueueGroup | quote }}
         - name: MSG_QUEUE_PRODUCER_NAME
           value: {{ .Values.streamer.env.msgQueueProducerName | quote }}
+        # Security credentials from Kubernetes secrets
+        - name: SERVICE_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "telemetry-stack.secretName" . }}
+              key: service-token
         ports:
         - containerPort: {{ .Values.streamer.service.port }}
         # Readiness probe - check if streamer service is ready

@@ -51,6 +51,12 @@ spec:
           value: {{ .Values.msgQueue.env.brokerCount | quote }}
         - name: TOPICS
           value: {{ .Values.msgQueue.env.topics | quote }}
+        # Security credentials from Kubernetes secrets
+        - name: SERVICE_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "telemetry-stack.secretName" . }}
+              key: service-token
         # Add health checks
         readinessProbe:
           httpGet:

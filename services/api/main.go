@@ -8,10 +8,11 @@ import (
 	"strings"
 	"time"
 
-	httpSwagger "github.com/swaggo/http-swagger"
 	"github.com/example/telemetry/internal/influx"
+	"github.com/example/telemetry/internal/security"
 	"github.com/example/telemetry/internal/telemetry"
 	_ "github.com/example/telemetry/services/api/docs"
+	httpSwagger "github.com/swaggo/http-swagger"
 )
 
 // @title Telemetry API
@@ -26,7 +27,17 @@ import (
 // @license.name Apache 2.0
 // @license.url http://www.apache.org/licenses/LICENSE-2.0.html
 
-// @host localhost:8080
+// @securityDefinitions.apikey ApiKeyAuth
+// @in header
+// @name X-API-Key
+// @description API Key authentication using X-API-Key header
+
+// @securityDefinitions.apikey BearerAuth
+// @in header
+// @name Authorization
+// @description Bearer token authentication using Authorization header (format: Bearer <token>)
+
+// @host localhost:30081
 // @BasePath /
 func main() {
 	logger := log.New(os.Stdout, "[api-service] ", log.LstdFlags)
@@ -51,8 +62,17 @@ func main() {
 	influxClient := influx.NewInfluxWriter(influxURL, influxToken, influxOrg, influxBucket)
 	defer influxClient.Close()
 
-	// Swagger endpoint
-	http.HandleFunc("/swagger/", httpSwagger.WrapHandler)
+	// Create HTTP router with API key authentication
+	mux := http.NewServeMux()
+
+	// Public endpoints (no auth required)
+	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("API service healthy"))
+	})
+
+	// Swagger endpoint (public for documentation)
+	mux.HandleFunc("/swagger/", httpSwagger.WrapHandler)
 
 	// @Summary Get recent telemetry data (legacy)
 	// @Description Get the 10 most recent telemetry records
@@ -61,7 +81,7 @@ func main() {
 	// @Success 200 {array} TelemetryDataResponse
 	// @Failure 500 {object} ErrorResponse
 	// @Router /gpus [get]
-	http.HandleFunc("/gpus", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/gpus", func(w http.ResponseWriter, r *http.Request) {
 		records, err := influxClient.QueryRecentTelemetry(10)
 		if err != nil {
 			logger.Printf("Failed to query InfluxDB: %v", err)
@@ -86,7 +106,8 @@ func main() {
 	// @Failure 404 {object} ErrorResponse
 	// @Failure 500 {object} ErrorResponse
 	// @Router /api/v1/gpus/{id}/telemetry [get]
-	http.HandleFunc("/api/v1/gpus/", func(w http.ResponseWriter, r *http.Request) {
+	// New endpoint: GET /api/v1/gpus/{id}/telemetry
+	mux.HandleFunc("/api/v1/gpus/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
@@ -155,11 +176,12 @@ func main() {
 	// @Description Get a list of all available GPUs with their metadata
 	// @Tags gpus
 	// @Produce json
+	// @Security ApiKeyAuth
 	// @Success 200 {object} GPUListResponse
 	// @Failure 500 {object} ErrorResponse
 	// @Router /api/v1/gpus [get]
 	// Helper endpoint: GET /api/v1/gpus - List available GPU IDs
-	http.HandleFunc("/api/v1/gpus", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/v1/gpus", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
@@ -181,7 +203,7 @@ func main() {
 		}
 
 		logger.Printf("Found %d unique GPUs", len(records))
-		
+
 		w.Header().Set("Content-Type", "application/json")
 		response := map[string]interface{}{
 			"count": len(records),
@@ -194,11 +216,12 @@ func main() {
 	// @Description Get a list of all hosts with GPU count
 	// @Tags infrastructure
 	// @Produce json
+	// @Security ApiKeyAuth
 	// @Success 200 {object} HostListResponse
 	// @Failure 500 {object} ErrorResponse
 	// @Router /api/v1/hosts [get]
 	// New endpoint: GET /api/v1/hosts - List available hosts
-	http.HandleFunc("/api/v1/hosts", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/v1/hosts", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
@@ -246,11 +269,12 @@ func main() {
 	// @Description Get a list of all Kubernetes namespaces with GPU count
 	// @Tags infrastructure
 	// @Produce json
+	// @Security ApiKeyAuth
 	// @Success 200 {object} NamespaceListResponse
 	// @Failure 500 {object} ErrorResponse
 	// @Router /api/v1/namespaces [get]
 	// New endpoint: GET /api/v1/namespaces - List available namespaces
-	http.HandleFunc("/api/v1/namespaces", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/v1/namespaces", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
@@ -288,7 +312,7 @@ func main() {
 
 		w.Header().Set("Content-Type", "application/json")
 		response := map[string]interface{}{
-			"count": len(namespaceInfo),
+			"count":      len(namespaceInfo),
 			"namespaces": namespaceInfo,
 		}
 		json.NewEncoder(w).Encode(response)
@@ -296,12 +320,17 @@ func main() {
 
 	logger.Println("API service started on :8080")
 	logger.Println("Available endpoints:")
-	logger.Println("  GET /swagger/                          - Swagger UI documentation")
-	logger.Println("  GET /gpus                              - Recent telemetry (legacy)")
-	logger.Println("  GET /api/v1/gpus                       - List available GPUs with metadata")
-	logger.Println("  GET /api/v1/gpus/{id}/telemetry        - GPU telemetry (recent)")
-	logger.Println("  GET /api/v1/gpus/{id}/telemetry?start_time=...&end_time=... - GPU telemetry (time range)")
-	logger.Println("  GET /api/v1/hosts                      - List available hosts")
-	logger.Println("  GET /api/v1/namespaces                 - List available namespaces")
-	log.Fatal(http.ListenAndServe(":8080", nil))
+	logger.Println("  GET /health                            - Health check (no auth)")
+	logger.Println("  GET /swagger/                          - Swagger UI documentation (no auth)")
+	logger.Println("  GET /gpus                              - Recent telemetry [API KEY REQUIRED]")
+	logger.Println("  GET /api/v1/gpus                       - List available GPUs [API KEY REQUIRED]")
+	logger.Println("  GET /api/v1/gpus/{id}/telemetry        - GPU telemetry [API KEY REQUIRED]")
+	logger.Println("  GET /api/v1/hosts                      - List available hosts [API KEY REQUIRED]")
+	logger.Println("  GET /api/v1/namespaces                 - List available namespaces [API KEY REQUIRED]")
+	logger.Println("")
+	logger.Println("Authentication: Include 'X-API-Key: <your-secret>' header or 'Authorization: Bearer <your-secret>'")
+
+	// Apply API key authentication middleware to all routes
+	securedHandler := security.APIKeyMiddleware(mux)
+	log.Fatal(http.ListenAndServe(":8080", securedHandler))
 }

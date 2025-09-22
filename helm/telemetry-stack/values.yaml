@@ -5,6 +5,25 @@
 global:
   imagePullPolicy: Never
 
+# Security configuration
+security:
+  # Single shared secret for REST API authentication
+  # Users include this as X-API-Key header or Authorization: Bearer token
+  apiKey: "telemetry-api-secret-2025"
+  # Internal service-to-service authentication token
+  serviceToken: "internal-service-token-2025"
+
+# Kubernetes Secrets configuration
+secrets:
+  # Enable creation of Kubernetes secrets
+  enabled: true
+  # Use existing secret instead of creating new one (optional)
+  # existingSecret: "my-existing-secret"
+  # API key for REST API authentication
+  apiKey: "telemetry-api-secret-2025"
+  # Service token for internal service communication
+  serviceToken: "internal-service-token-2025"
+
 # InfluxDB configuration
 influxdb:
   enabled: true

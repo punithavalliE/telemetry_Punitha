@@ -15,8 +15,30 @@
         },
         "version": "1.0"
     },
-    "host": "localhost:8080",
+    "host": "localhost:30081",
     "basePath": "/",
+    "securityDefinitions": {
+        "ApiKeyAuth": {
+            "type": "apiKey",
+            "name": "X-API-Key",
+            "in": "header",
+            "description": "API Key authentication using X-API-Key header"
+        },
+        "BearerAuth": {
+            "type": "apiKey",
+            "name": "Authorization",
+            "in": "header",
+            "description": "Bearer token authentication using Authorization header (format: Bearer <token>)"
+        }
+    },
+    "security": [
+        {
+            "ApiKeyAuth": []
+        },
+        {
+            "BearerAuth": []
+        }
+    ],
     "paths": {
         "/gpus": {
             "get": {
@@ -49,6 +71,14 @@
                 "produces": ["application/json"],
                 "tags": ["gpus"],
                 "summary": "List available GPUs",
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    },
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -71,6 +101,14 @@
                 "produces": ["application/json"],
                 "tags": ["telemetry"],
                 "summary": "Get GPU telemetry data",
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    },
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "parameters": [
                     {
                         "type": "string",
@@ -132,6 +170,14 @@
                 "produces": ["application/json"],
                 "tags": ["infrastructure"],
                 "summary": "List available hosts",
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    },
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -154,6 +200,14 @@
                 "produces": ["application/json"],
                 "tags": ["infrastructure"],
                 "summary": "List available namespaces",
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    },
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",

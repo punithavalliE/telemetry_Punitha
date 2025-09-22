@@ -49,3 +49,14 @@ Selector labels
 app.kubernetes.io/name: {{ include "telemetry-stack.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
+
+{{/*
+Secret name for telemetry authentication
+*/}}
+{{- define "telemetry-stack.secretName" -}}
+{{- if .Values.secrets.existingSecret }}
+{{- .Values.secrets.existingSecret }}
+{{- else }}
+{{- printf "%s-auth" (include "telemetry-stack.fullname" .) }}
+{{- end }}
+{{- end }}

@@ -23,13 +23,387 @@ const docTemplate = `{
     },
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
-    "paths": {}
+    "securityDefinitions": {
+        "ApiKeyAuth": {
+            "type": "apiKey",
+            "name": "X-API-Key",
+            "in": "header",
+            "description": "API Key authentication using X-API-Key header"
+        },
+        "BearerAuth": {
+            "type": "apiKey",
+            "name": "Authorization",
+            "in": "header",
+            "description": "Bearer token authentication using Authorization header (format: Bearer <token>)"
+        }
+    },
+    "security": [
+        {
+            "ApiKeyAuth": []
+        },
+        {
+            "BearerAuth": []
+        }
+    ],
+    "paths": {
+        "/gpus": {
+            "get": {
+                "description": "Get the 10 most recent telemetry records",
+                "produces": ["application/json"],
+                "tags": ["legacy"],
+                "summary": "Get recent telemetry data (legacy)",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/TelemetryDataResponse"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/gpus": {
+            "get": {
+                "description": "Get a list of all available GPUs with their metadata",
+                "produces": ["application/json"],
+                "tags": ["gpus"],
+                "summary": "List available GPUs",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/GPUListResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/gpus/{id}/telemetry": {
+            "get": {
+                "description": "Get telemetry data for a specific GPU with optional time range filtering",
+                "produces": ["application/json"],
+                "tags": ["telemetry"],
+                "summary": "Get GPU telemetry data",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "GPU ID (UUID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Start time in RFC3339 format (e.g., 2023-01-01T00:00:00Z)",
+                        "name": "start_time",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "End time in RFC3339 format (e.g., 2023-01-01T23:59:59Z)",
+                        "name": "end_time",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Maximum number of records to return (default: 100)",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/TelemetryResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/hosts": {
+            "get": {
+                "description": "Get a list of all hosts with GPU count",
+                "produces": ["application/json"],
+                "tags": ["infrastructure"],
+                "summary": "List available hosts",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/HostListResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/namespaces": {
+            "get": {
+                "description": "Get a list of all Kubernetes namespaces with GPU count",
+                "produces": ["application/json"],
+                "tags": ["infrastructure"],
+                "summary": "List available namespaces",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/NamespaceListResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "ErrorResponse": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string",
+                    "example": "Failed to query data"
+                },
+                "message": {
+                    "type": "string",
+                    "example": "Additional error details"
+                }
+            }
+        },
+        "GPUInfo": {
+            "type": "object",
+            "properties": {
+                "device_id": {
+                    "type": "string",
+                    "example": "nvidia0"
+                },
+                "gpu_id": {
+                    "type": "string",
+                    "example": "0"
+                },
+                "uuid": {
+                    "type": "string",
+                    "example": "GPU-5fd4f087-86f3-7a43-b711-4771313afc50"
+                },
+                "model_name": {
+                    "type": "string",
+                    "example": "NVIDIA H100 80GB HBM3"
+                },
+                "hostname": {
+                    "type": "string",
+                    "example": "mtv5-dgx1-hgpu-031"
+                },
+                "container": {
+                    "type": "string",
+                    "example": ""
+                },
+                "pod": {
+                    "type": "string",
+                    "example": ""
+                },
+                "namespace": {
+                    "type": "string",
+                    "example": ""
+                },
+                "last_seen": {
+                    "type": "string",
+                    "example": "2025-07-18T20:42:34Z"
+                }
+            }
+        },
+        "GPUListResponse": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer",
+                    "example": 2
+                },
+                "gpus": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/GPUInfo"
+                    }
+                }
+            }
+        },
+        "HostInfo": {
+            "type": "object",
+            "properties": {
+                "hostname": {
+                    "type": "string",
+                    "example": "mtv5-dgx1-hgpu-031"
+                },
+                "gpu_count": {
+                    "type": "integer",
+                    "example": 8
+                }
+            }
+        },
+        "HostListResponse": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "hosts": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/HostInfo"
+                    }
+                }
+            }
+        },
+        "NamespaceInfo": {
+            "type": "object",
+            "properties": {
+                "namespace": {
+                    "type": "string",
+                    "example": "default"
+                },
+                "gpu_count": {
+                    "type": "integer",
+                    "example": 4
+                }
+            }
+        },
+        "NamespaceListResponse": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer",
+                    "example": 2
+                },
+                "namespaces": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/NamespaceInfo"
+                    }
+                }
+            }
+        },
+        "TelemetryDataResponse": {
+            "type": "object",
+            "properties": {
+                "device_id": {
+                    "type": "string",
+                    "example": "nvidia0"
+                },
+                "metric": {
+                    "type": "string",
+                    "example": "DCGM_FI_DEV_GPU_UTIL"
+                },
+                "value": {
+                    "type": "number",
+                    "example": 85.5
+                },
+                "time": {
+                    "type": "string",
+                    "example": "2025-07-18T20:42:34Z"
+                },
+                "gpu_id": {
+                    "type": "string",
+                    "example": "0"
+                },
+                "uuid": {
+                    "type": "string",
+                    "example": "GPU-5fd4f087-86f3-7a43-b711-4771313afc50"
+                },
+                "model_name": {
+                    "type": "string",
+                    "example": "NVIDIA H100 80GB HBM3"
+                },
+                "hostname": {
+                    "type": "string",
+                    "example": "mtv5-dgx1-hgpu-031"
+                },
+                "container": {
+                    "type": "string",
+                    "example": ""
+                },
+                "pod": {
+                    "type": "string",
+                    "example": ""
+                },
+                "namespace": {
+                    "type": "string",
+                    "example": ""
+                },
+                "labels_raw": {
+                    "type": "string",
+                    "example": "DCGM_FI_DRIVER_VERSION=\"535.129.03\""
+                }
+            }
+        },
+        "TelemetryResponse": {
+            "type": "object",
+            "properties": {
+                "gpu_id": {
+                    "type": "string",
+                    "example": "nvidia0"
+                },
+                "count": {
+                    "type": "integer",
+                    "example": 100
+                },
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/TelemetryDataResponse"
+                    }
+                }
+            }
+        }
+    }
 }`
 
 // SwaggerInfo holds exported Swagger Info so clients can modify it
 var SwaggerInfo = &swag.Spec{
 	Version:          "1.0",
-	Host:             "localhost:8080",
+	Host:             "localhost:30081",
 	BasePath:         "/",
 	Schemes:          []string{},
 	Title:            "Telemetry API",
