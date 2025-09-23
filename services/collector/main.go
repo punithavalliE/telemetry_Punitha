@@ -173,14 +173,16 @@ func (cs *CollectorService) Start() {
 			// Parse value field
 			value, err := strconv.ParseFloat(csvRecord[10], 64)
 			if err != nil {
-				cs.logger.Printf("Failed to parse value field for id %s: %v", id, err)
+				cs.logger.Printf("Failed to parse value field '%s' for id %s: %v", csvRecord[10], id, err)
+				metrics.RecordMessageProcessing("collector-service", topic, time.Since(start))
 				return nil
 			}
 
 			// Parse timestamp
 			timestamp, err := time.Parse(time.RFC3339, csvRecord[0])
 			if err != nil {
-				cs.logger.Printf("Failed to parse timestamp for id %s: %v", id, err)
+				cs.logger.Printf("Failed to parse timestamp '%s' for id %s: %v", csvRecord[0], id, err)
+				metrics.RecordMessageProcessing("collector-service", topic, time.Since(start))
 				return nil
 			}
 

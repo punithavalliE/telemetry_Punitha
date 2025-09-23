@@ -3,8 +3,8 @@
 // Simple scalable message queue broker in Go.
 // Features:
 // - Topics and fixed number of partitions per topic.
-// - Partition ownership: partition % BROKER_COUNT == BROKER_INDEX
-//   (so you can run multiple broker instances with different BROKER_INDEX).
+// - Dynamic partition creation: partitions are created on-demand when first accessed
+//   (you can run multiple broker instances for load balancing).
 // - HTTP API for producing messages, consuming (SSE), ack-ing messages.
 // - In-memory queue with append-only file persistence per partition.
 // - Visibility timeout for in-flight messages and automatic requeue on timeout.
@@ -233,20 +233,10 @@ func NewBroker(topics map[string]int, visTO time.Duration, brokerIndex, brokerCo
 		brokerIndex: brokerIndex,
 		brokerCount: brokerCount,
 	}
-	for topic, pcount := range topics {
+	// Initialize partition maps for topics but don't create partitions yet
+	for topic := range topics {
 		b.partitions[topic] = make(map[int]*Partition)
-		for i := 0; i < pcount; i++ {
-			// partition assignment: owned if i % brokerCount == brokerIndex
-			if i%brokerCount != brokerIndex {
-				continue
-			}
-			p, err := newPartition(topic, i, visTO)
-			if err != nil {
-				return nil, fmt.Errorf("create partition %s-%d error: %w", topic, i, err)
-			}
-			b.partitions[topic][i] = p
-			log.Printf("owning partition %s-%d", topic, i)
-		}
+		log.Printf("initialized topic %s (partitions will be created on-demand)", topic)
 	}
 	return b, nil
 }
@@ -259,87 +249,83 @@ func (b *Broker) Close() {
 	}
 }
 
-func (b *Broker) owns(topic string, partition int) bool {
-	b.partitionsMu.RLock()
-	defer b.partitionsMu.RUnlock()
-	pm, ok := b.partitions[topic]
-	if !ok {
-		return false
-	}
-	_, ok = pm[partition]
-	return ok
-}
+// createPartitionIfNotExists creates a partition if it doesn't exist
+func (b *Broker) createPartitionIfNotExists(topic string, partition int) (*Partition, error) {
+	b.partitionsMu.Lock()
+	defer b.partitionsMu.Unlock()
 
-func (b *Broker) getPartition(topic string, partition int) (*Partition, error) {
-	b.partitionsMu.RLock()
-	defer b.partitionsMu.RUnlock()
+	// Check if topic exists
 	pm, ok := b.partitions[topic]
 	if !ok {
 		return nil, fmt.Errorf("unknown topic")
 	}
-	p, ok := pm[partition]
-	if !ok {
-		return nil, fmt.Errorf("partition not owned by this broker")
+
+	// Check if partition already exists
+	if p, exists := pm[partition]; exists {
+		return p, nil
 	}
+
+	// Check if partition is within valid range
+	maxPartitions, ok := b.topics[topic]
+	if !ok {
+		return nil, fmt.Errorf("unknown topic")
+	}
+	if partition >= maxPartitions {
+		return nil, fmt.Errorf("partition %d exceeds max partitions %d for topic %s", partition, maxPartitions, topic)
+	}
+
+	// Create new partition
+	p, err := newPartition(topic, partition, b.visTO)
+	if err != nil {
+		return nil, fmt.Errorf("create partition %s-%d error: %w", topic, partition, err)
+	}
+
+	pm[partition] = p
+	log.Printf("dynamically created partition %s-%d", topic, partition)
 	return p, nil
 }
 
-// getOwnedPartition returns the first partition owned by this broker for the given topic
-func (b *Broker) getOwnedPartition(topic string) (int, error) {
+func (b *Broker) getPartition(topic string, partition int) (*Partition, error) {
 	b.partitionsMu.RLock()
-	defer b.partitionsMu.RUnlock()
 	pm, ok := b.partitions[topic]
 	if !ok {
-		return -1, fmt.Errorf("unknown topic")
+		b.partitionsMu.RUnlock()
+		return nil, fmt.Errorf("unknown topic")
+	}
+	p, exists := pm[partition]
+	b.partitionsMu.RUnlock()
+
+	if !exists {
+		// Partition doesn't exist, create it dynamically
+		return b.createPartitionIfNotExists(topic, partition)
 	}
 
-	// Return the first owned partition
-	for partition := range pm {
-		return partition, nil
-	}
-
-	return -1, fmt.Errorf("no partitions owned for topic")
+	return p, nil
 }
 
 // produceHandler: POST /produce?topic=foo&partition=0
 // body: raw payload (text) or JSON {"payload":"..."}
-// If partition is not specified, auto-assign to an owned partition
+// If partition is not specified, auto-assign to an available partition
 func (b *Broker) produceHandler(w http.ResponseWriter, r *http.Request) {
 	topic := r.URL.Query().Get("topic")
 	partStr := r.URL.Query().Get("partition")
 	log.Printf("Broker received produce request: topic=%s, partition=%s", topic, partStr)
-	
-	if topic == "" {
-		log.Printf("Rejecting request: topic required")
-		http.Error(w, "topic required", http.StatusBadRequest)
+
+	if topic == "" || partStr == "" {
+		log.Printf("Rejecting request: topic and partition required")
+		http.Error(w, "topic and partition required", http.StatusBadRequest)
 		return
 	}
 
 	var part int
 	var err error
 
-	if partStr == "" {
-		// Auto-assign partition to any owned partition for this topic
-		part, err = b.getOwnedPartition(topic)
-		if err != nil {
-			http.Error(w, fmt.Sprintf("no owned partitions for topic %s: %v", topic, err), http.StatusBadRequest)
-			return
-		}
-	} else {
-		part, err = strconv.Atoi(partStr)
-		if err != nil {
-			log.Printf("Rejecting request: bad partition '%s'", partStr)
-			http.Error(w, "bad partition", http.StatusBadRequest)
-			return
-		}
-		log.Printf("Checking ownership of partition %d for topic %s", part, topic)
-		if !b.owns(topic, part) {
-			log.Printf("Rejecting request: partition %d not owned for topic %s", part, topic)
-			http.Error(w, "partition not owned", http.StatusBadRequest)
-			return
-		}
-		log.Printf("Partition %d is owned, proceeding with message production", part)
+	part, err = strconv.Atoi(partStr)
+	if err != nil {
+		http.Error(w, "bad partition", http.StatusBadRequest)
+		return
 	}
+	log.Printf("Publishing message for partition %d for topic %s", part, topic)
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, "read body error", http.StatusBadRequest)
@@ -388,33 +374,20 @@ func (b *Broker) consumeHandler(w http.ResponseWriter, r *http.Request) {
 	partStr := r.URL.Query().Get("partition")
 	group := r.URL.Query().Get("group")
 	log.Printf("Broker received consume request: topic=%s, partition=%s, group=%s", topic, partStr, group)
-	
-	if topic == "" || group == "" {
-		log.Printf("Rejecting consume request: topic and group required")
-		http.Error(w, "topic and group required", http.StatusBadRequest)
+
+	if topic == "" || partStr == "" || group == "" {
+		log.Printf("Rejecting consume request: topic, partition and group required")
+		http.Error(w, "topic, partition and group required", http.StatusBadRequest)
 		return
 	}
 
 	var part int
 	var err error
 
-	if partStr == "" {
-		// Auto-assign partition to any owned partition for this topic
-		part, err = b.getOwnedPartition(topic)
-		if err != nil {
-			http.Error(w, fmt.Sprintf("no owned partitions for topic %s: %v", topic, err), http.StatusBadRequest)
-			return
-		}
-	} else {
-		part, err = strconv.Atoi(partStr)
-		if err != nil {
-			http.Error(w, "bad partition", http.StatusBadRequest)
-			return
-		}
-		if !b.owns(topic, part) {
-			http.Error(w, "partition not owned", http.StatusBadRequest)
-			return
-		}
+	part, err = strconv.Atoi(partStr)
+	if err != nil {
+		http.Error(w, "bad partition", http.StatusBadRequest)
+		return
 	}
 	p, err := b.getPartition(topic, part)
 	if err != nil {

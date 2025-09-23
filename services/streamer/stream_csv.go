@@ -20,6 +20,9 @@ func (ss *StreamerService) StreamCSV(filePath string, delay time.Duration) error
 	recordCount := 0
 	ss.logger.Printf("Starting CSV streaming with %v delay between records", delay)
 	
+	// Skip the header row on first read
+	skipHeader := true
+	
 	//for i := 0; i < 10; i++ {
 	for {
 		rec, err := r.Read()
@@ -28,10 +31,19 @@ func (ss *StreamerService) StreamCSV(filePath string, delay time.Duration) error
 				ss.logger.Printf("Reached end of CSV file, restarting from beginning (processed %d records so far)", recordCount)
 				f.Seek(0, 0)
 				r = csv.NewReader(f)
+				skipHeader = true // Reset header skip flag when restarting
 				continue
 			}
 			return err
 		}
+		
+		// Skip header row
+		if skipHeader {
+			ss.logger.Printf("Skipping CSV header row: %v", rec)
+			skipHeader = false
+			continue
+		}
+		
 		if len(rec) < 12 {
 			ss.logger.Printf("Skipping incomplete record (only %d fields)", len(rec))
 			continue

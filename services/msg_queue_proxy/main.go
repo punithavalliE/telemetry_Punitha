@@ -270,7 +270,7 @@ func (sp *SmartProxy) recordRequest(requestType string, broker string, latency t
 // produceHandler handles message production
 func (sp *SmartProxy) produceHandler(w http.ResponseWriter, r *http.Request) {
 	log.Printf("Received produce request: method=%s, url=%s", r.Method, r.URL.String())
-	
+
 	if r.Method != http.MethodPost {
 		log.Printf("Rejecting non-POST request: %s", r.Method)
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -325,25 +325,16 @@ func (sp *SmartProxy) consumeHandler(w http.ResponseWriter, r *http.Request) {
 	topic := r.URL.Query().Get("topic")
 	partStr := r.URL.Query().Get("partition")
 	group := r.URL.Query().Get("group")
-	key := r.URL.Query().Get("key")
+	//key := r.URL.Query().Get("key")
 
-	if topic == "" || group == "" {
-		http.Error(w, "topic and group required", http.StatusBadRequest)
+	if topic == "" || partStr == "" || group == "" {
+		http.Error(w, "topic, partition and group required", http.StatusBadRequest)
 		return
 	}
-
-	var partition int
-	var err error
-
-	if partStr != "" {
-		partition, err = strconv.Atoi(partStr)
-		if err != nil {
-			http.Error(w, "invalid partition", http.StatusBadRequest)
-			return
-		}
-	} else {
-		// Auto-assign partition using consistent hashing - same as producer
-		partition = sp.assignPartition(topic, key)
+	partition, err := strconv.Atoi(partStr)
+	if err != nil {
+		http.Error(w, "invalid partition", http.StatusBadRequest)
+		return
 	}
 
 	// Get target broker using topic-partition combination
@@ -606,7 +597,7 @@ func (sp *SmartProxy) forwardRequest(w http.ResponseWriter, r *http.Request, tar
 	// Record successful request
 	success := resp.StatusCode >= 200 && resp.StatusCode < 400
 	sp.recordRequest(requestType, targetURL, time.Since(startTime), success)
-	
+
 	if success {
 		log.Printf("Successfully forwarded %s request to %s (status: %d)", requestType, targetURL, resp.StatusCode)
 	} else {
