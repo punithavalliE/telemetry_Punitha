@@ -10,13 +10,13 @@ import (
 // StreamCSV reads telemetry data from a CSV file and publishes the entire CSV record to the queue.
 // CSV format: timestamp,metric_name,gpu_id,device,uuid,modelName,Hostname,container,pod,namespace,value,labels_raw
 func (ss *StreamerService) StreamCSV(filePath string, delay time.Duration) error {
-       f, err := os.Open(filePath)
-       if err != nil {
-	       return err
-       }
-       defer f.Close()
+	f, err := os.Open(filePath)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
 
-       r := csv.NewReader(f)
+	r := csv.NewReader(f)
 	//for i := 0; i < 10; i++ {
 	for {
 		rec, err := r.Read()
@@ -31,7 +31,7 @@ func (ss *StreamerService) StreamCSV(filePath string, delay time.Duration) error
 		if len(rec) < 12 {
 			continue
 		}
-		
+
 		// Send the entire CSV record as JSON array
 		msgBody, err := json.Marshal(rec)
 		if err != nil {

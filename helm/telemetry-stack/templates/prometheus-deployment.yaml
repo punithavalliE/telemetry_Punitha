@@ -1,13 +1,4 @@
-{{- if .Values.prometheus.serviceAccount.create }}
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: {{ .Values.prometheus.serviceAccount.name | default "prometheus" }}
-  labels:
-    app: prometheus
-    {{- include "telemetry-stack.labels" . | nindent 4 }}
----
-{{- end }}
+{{- if .Values.prometheus.enabled }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -27,11 +18,7 @@ spec:
         app: prometheus
         {{- include "telemetry-stack.selectorLabels" . | nindent 8 }}
     spec:
-      {{- if .Values.prometheus.serviceAccount.create }}
-      serviceAccountName: {{ .Values.prometheus.serviceAccount.name | default "prometheus" }}
-      {{- else }}
-      serviceAccountName: {{ include "telemetry-stack.serviceAccountName" . }}
-      {{- end }}
+      serviceAccountName: {{ include "telemetry-stack.fullname" . }}-prometheus
       containers:
       - name: prometheus
         image: prom/prometheus:v2.45.0
@@ -117,4 +104,5 @@ spec:
   {{- if .Values.prometheus.persistence.storageClass }}
   storageClassName: {{ .Values.prometheus.persistence.storageClass }}
   {{- end }}
+{{- end }}
 {{- end }}

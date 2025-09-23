@@ -8,11 +8,10 @@ FROM alpine:latest
 WORKDIR /root/
 COPY --from=builder /app/services/msg_queue/msg_queue .
 RUN mkdir -p /root/data
-ENV PORT=8080
+#ENV PORT=8080
 # BROKER_INDEX and BROKER_COUNT will be set by StatefulSet
 # Default values only for standalone testing
 ENV BROKER_INDEX=0
 ENV BROKER_COUNT=1
 ENV TOPICS=telemetry:4
-EXPOSE 8080
 CMD ["./msg_queue"]

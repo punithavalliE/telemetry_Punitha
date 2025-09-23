@@ -58,7 +58,7 @@ type pending struct {
 type Partition struct {
 	topic     string
 	index     int
-	queue     chan Message    // main queue
+	queue     chan Message // main queue
 	pendingMu sync.Mutex
 	pending   map[string]pending // messageID -> pending
 	file      *os.File
@@ -289,12 +289,12 @@ func (b *Broker) getOwnedPartition(topic string) (int, error) {
 	if !ok {
 		return -1, fmt.Errorf("unknown topic")
 	}
-	
+
 	// Return the first owned partition
 	for partition := range pm {
 		return partition, nil
 	}
-	
+
 	return -1, fmt.Errorf("no partitions owned for topic")
 }
 
@@ -308,10 +308,10 @@ func (b *Broker) produceHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "topic required", http.StatusBadRequest)
 		return
 	}
-	
+
 	var part int
 	var err error
-	
+
 	if partStr == "" {
 		// Auto-assign partition to any owned partition for this topic
 		part, err = b.getOwnedPartition(topic)
@@ -381,10 +381,10 @@ func (b *Broker) consumeHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "topic and group required", http.StatusBadRequest)
 		return
 	}
-	
+
 	var part int
 	var err error
-	
+
 	if partStr == "" {
 		// Auto-assign partition to any owned partition for this topic
 		part, err = b.getOwnedPartition(topic)
@@ -487,7 +487,7 @@ func main() {
 	// Initialize Prometheus metrics
 	metrics.InitMetrics("msg-queue-service")
 	log.Println("Prometheus metrics initialized")
-	
+
 	// Configuration (could be flags/env)
 	topicsConf := map[string]int{
 		"events":  8,
@@ -539,7 +539,7 @@ func main() {
 	mux.HandleFunc("/consume", broker.consumeHandler)
 	mux.HandleFunc("/ack", broker.ackHandler)
 	mux.HandleFunc("/topics", broker.topicsHandler)
-	
+
 	// Add Prometheus metrics endpoint
 	mux.Handle("/metrics", metrics.MetricsHandler())
 
