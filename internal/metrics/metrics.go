@@ -96,6 +96,48 @@ var (
 		},
 		[]string{"service"},
 	)
+
+	// Proxy-specific metrics
+	ProxyRequestsTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "proxy_requests_total",
+			Help: "Total number of requests handled by the proxy",
+		},
+		[]string{"service", "request_type", "status"},
+	)
+
+	ProxyRequestDuration = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "proxy_request_duration_seconds",
+			Help:    "Duration of proxy request forwarding in seconds",
+			Buckets: prometheus.DefBuckets,
+		},
+		[]string{"service", "request_type"},
+	)
+
+	ProxyBrokerRequests = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "proxy_broker_requests_total",
+			Help: "Total number of requests forwarded to each broker",
+		},
+		[]string{"service", "broker", "status"},
+	)
+
+	ProxyBrokerHealth = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "proxy_broker_health",
+			Help: "Health status of brokers (1 = healthy, 0 = unhealthy)",
+		},
+		[]string{"service", "broker"},
+	)
+
+	ProxyHealthChecks = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "proxy_health_checks_total",
+			Help: "Total number of health checks performed",
+		},
+		[]string{"service"},
+	)
 )
 
 // InitMetrics registers all metrics with Prometheus
@@ -111,6 +153,11 @@ func InitMetrics(serviceName string) {
 		ServiceHealth,
 		TelemetryDataPoints,
 		ActiveConnections,
+		ProxyRequestsTotal,
+		ProxyRequestDuration,
+		ProxyBrokerRequests,
+		ProxyBrokerHealth,
+		ProxyHealthChecks,
 	)
 
 	// Set initial health status

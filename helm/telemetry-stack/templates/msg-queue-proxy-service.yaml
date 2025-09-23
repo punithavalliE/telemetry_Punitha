@@ -1,0 +1,49 @@
+{{- if .Values.msgQueueProxy.enabled -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "telemetry-stack.fullname" . }}-{{ .Values.msgQueueProxy.name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "telemetry-stack.labels" . | nindent 4 }}
+    app.kubernetes.io/component: {{ .Values.msgQueueProxy.name }}
+  {{- if .Values.msgQueueProxy.monitoring.enabled }}
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: {{ .Values.msgQueueProxy.service.port | quote }}
+    prometheus.io/path: {{ .Values.msgQueueProxy.monitoring.metricsPath | quote }}
+  {{- end }}
+spec:
+  type: {{ .Values.msgQueueProxy.service.type }}
+  ports:
+  - port: {{ .Values.msgQueueProxy.service.port }}
+    targetPort: {{ .Values.msgQueueProxy.service.port }}
+    protocol: TCP
+    name: http
+  selector:
+    {{- include "telemetry-stack.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: {{ .Values.msgQueueProxy.name }}
+---
+{{- if .Values.msgQueueProxy.service.external.enabled }}
+# External LoadBalancer service for msg-queue-proxy
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "telemetry-stack.fullname" . }}-{{ .Values.msgQueueProxy.name }}-external
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "telemetry-stack.labels" . | nindent 4 }}
+    app.kubernetes.io/component: {{ .Values.msgQueueProxy.name }}
+    service-type: external
+spec:
+  type: {{ .Values.msgQueueProxy.service.external.type }}
+  ports:
+  - port: {{ .Values.msgQueueProxy.service.port }}
+    targetPort: {{ .Values.msgQueueProxy.service.port }}
+    protocol: TCP
+    name: http
+  selector:
+    {{- include "telemetry-stack.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: {{ .Values.msgQueueProxy.name }}
+{{- end -}}
+{{- end -}}

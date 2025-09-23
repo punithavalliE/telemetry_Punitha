@@ -4,6 +4,8 @@
 # Global settings
 global:
   imagePullPolicy: Never
+  prometheusOperator:
+    enabled: false
 
 # Security configuration
 security:
@@ -78,7 +80,7 @@ collector:
     influxdbToken: "supersecrettoken"
     influxdbOrg: "telemetryorg"
     influxdbBucket: "telem_bucket"
-    msgQueueAddr: "http://msg-queue:8080"
+    msgQueueAddr: "http://telemetry-telemetry-stack-msg-queue-proxy:8080"
     msgQueueTopic: "telemetry"
     msgQueueGroup: "telemetry_group"
     msgQueueConsumerName: "collector"
@@ -123,6 +125,48 @@ msgQueue:
     #    hosts:
     #      - msg-queue.local
 
+# Message Queue Proxy configuration
+msgQueueProxy:
+  enabled: true
+  name: msg-queue-proxy
+  replicaCount: 2
+  image:
+    repository: msg-queue-proxy
+    tag: latest
+  service:
+    type: ClusterIP
+    port: 8080
+    # Optional: external load balancer
+    external:
+      enabled: false
+      type: LoadBalancer
+  env:
+    port: "8080"
+    brokerService: "msg-queue"
+    brokerCount: "1"
+    virtualNodes: "150"
+    maxPartitions: "4"
+    healthIntervalSeconds: "30"
+  resources:
+    requests:
+      memory: "64Mi"
+      cpu: "50m"
+    limits:
+      memory: "128Mi"
+      cpu: "100m"
+  # Health check configuration
+  healthCheck:
+    path: "/health"
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    readinessInitialDelaySeconds: 5
+    readinessPeriodSeconds: 5
+  # Monitoring configuration
+  monitoring:
+    enabled: true
+    metricsPath: "/metrics"
+    statsPath: "/stats"
+
 # Streamer configuration
 streamer:
   enabled: true
@@ -138,7 +182,7 @@ streamer:
     csvDelayMs: "1000"
     useHttpQueue: "true"
     port: "8080"
-    msgQueueAddr: "http://msg-queue:8080"
+    msgQueueAddr: "http://telemetry-telemetry-stack-msg-queue-proxy:8080"
     msgQueueTopic: "telemetry"
     msgQueueGroup: "telemetry_group"
     msgQueueProducerName: "streamer"

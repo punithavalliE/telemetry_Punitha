@@ -1,0 +1,71 @@
+{{- if .Values.msgQueueProxy.enabled -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "telemetry-stack.fullname" . }}-{{ .Values.msgQueueProxy.name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "telemetry-stack.labels" . | nindent 4 }}
+    app.kubernetes.io/component: {{ .Values.msgQueueProxy.name }}
+spec:
+  replicas: {{ .Values.msgQueueProxy.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "telemetry-stack.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: {{ .Values.msgQueueProxy.name }}
+  template:
+    metadata:
+      labels:
+        {{- include "telemetry-stack.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: {{ .Values.msgQueueProxy.name }}
+      annotations:
+        # Force pod restart on config changes
+        checksum/config: {{ .Values.msgQueueProxy | toYaml | sha256sum }}
+    spec:
+      containers:
+      - name: {{ .Values.msgQueueProxy.name }}
+        image: "{{ .Values.msgQueueProxy.image.repository }}:{{ .Values.msgQueueProxy.image.tag }}"
+        imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+        ports:
+        - containerPort: {{ .Values.msgQueueProxy.service.port }}
+          name: http
+          protocol: TCP
+        env:
+        - name: PORT
+          value: {{ .Values.msgQueueProxy.env.port | quote }}
+        - name: BROKER_SERVICE
+          value: "{{ .Values.msgQueueProxy.env.brokerService }}"
+        - name: BROKER_COUNT
+          value: {{ .Values.msgQueueProxy.env.brokerCount | quote }}
+        - name: VIRTUAL_NODES
+          value: {{ .Values.msgQueueProxy.env.virtualNodes | quote }}
+        - name: MAX_PARTITIONS
+          value: {{ .Values.msgQueueProxy.env.maxPartitions | quote }}
+        - name: HEALTH_INTERVAL_SECONDS
+          value: {{ .Values.msgQueueProxy.env.healthIntervalSeconds | quote }}
+        resources:
+          {{- toYaml .Values.msgQueueProxy.resources | nindent 10 }}
+        livenessProbe:
+          httpGet:
+            path: {{ .Values.msgQueueProxy.healthCheck.path }}
+            port: {{ .Values.msgQueueProxy.service.port }}
+          initialDelaySeconds: {{ .Values.msgQueueProxy.healthCheck.initialDelaySeconds }}
+          periodSeconds: {{ .Values.msgQueueProxy.healthCheck.periodSeconds }}
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: {{ .Values.msgQueueProxy.healthCheck.path }}
+            port: {{ .Values.msgQueueProxy.service.port }}
+          initialDelaySeconds: {{ .Values.msgQueueProxy.healthCheck.readinessInitialDelaySeconds }}
+          periodSeconds: {{ .Values.msgQueueProxy.healthCheck.readinessPeriodSeconds }}
+          timeoutSeconds: 3
+          successThreshold: 1
+          failureThreshold: 3
+        {{- if .Values.msgQueueProxy.monitoring.enabled }}
+        # Monitoring endpoints available at /metrics, /stats, /health, /status
+        {{- end }}
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 30
+{{- end -}}

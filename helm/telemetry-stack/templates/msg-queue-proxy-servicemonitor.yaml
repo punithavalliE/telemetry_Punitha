@@ -1,0 +1,33 @@
+{{- if and .Values.msgQueueProxy.enabled .Values.msgQueueProxy.monitoring.enabled (default false .Values.global.prometheusOperator.enabled) -}}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "telemetry-stack.fullname" . }}-{{ .Values.msgQueueProxy.name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "telemetry-stack.labels" . | nindent 4 }}
+    app.kubernetes.io/component: {{ .Values.msgQueueProxy.name }}
+    monitoring: prometheus
+spec:
+  selector:
+    matchLabels:
+      {{- include "telemetry-stack.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: {{ .Values.msgQueueProxy.name }}
+  endpoints:
+  - port: http
+    path: {{ .Values.msgQueueProxy.monitoring.metricsPath }}
+    interval: 15s
+    scrapeTimeout: 10s
+    scheme: http
+    honorLabels: false
+    metricRelabelings:
+    - sourceLabels: [__name__]
+      regex: 'proxy_.*'
+      targetLabel: __tmp_proxy_metric
+      replacement: 'true'
+    # Add additional labels
+    - targetLabel: service_type
+      replacement: 'msg-queue-proxy'
+    - targetLabel: telemetry_component
+      replacement: 'message-queue'
+{{- end -}}

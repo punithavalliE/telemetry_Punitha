@@ -194,6 +194,9 @@ func (p *Partition) fetchAndTrack(group string) (Message, error) {
 		}
 		p.pendingMu.Unlock()
 		return msg, nil
+	case <-time.After(5 * time.Second):
+		// Return empty message after timeout - consumer will retry
+		return Message{}, errors.New("no messages available")
 	}
 }
 
@@ -304,7 +307,10 @@ func (b *Broker) getOwnedPartition(topic string) (int, error) {
 func (b *Broker) produceHandler(w http.ResponseWriter, r *http.Request) {
 	topic := r.URL.Query().Get("topic")
 	partStr := r.URL.Query().Get("partition")
+	log.Printf("Broker received produce request: topic=%s, partition=%s", topic, partStr)
+	
 	if topic == "" {
+		log.Printf("Rejecting request: topic required")
 		http.Error(w, "topic required", http.StatusBadRequest)
 		return
 	}
@@ -322,13 +328,17 @@ func (b *Broker) produceHandler(w http.ResponseWriter, r *http.Request) {
 	} else {
 		part, err = strconv.Atoi(partStr)
 		if err != nil {
+			log.Printf("Rejecting request: bad partition '%s'", partStr)
 			http.Error(w, "bad partition", http.StatusBadRequest)
 			return
 		}
+		log.Printf("Checking ownership of partition %d for topic %s", part, topic)
 		if !b.owns(topic, part) {
+			log.Printf("Rejecting request: partition %d not owned for topic %s", part, topic)
 			http.Error(w, "partition not owned", http.StatusBadRequest)
 			return
 		}
+		log.Printf("Partition %d is owned, proceeding with message production", part)
 	}
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -377,7 +387,10 @@ func (b *Broker) consumeHandler(w http.ResponseWriter, r *http.Request) {
 	topic := r.URL.Query().Get("topic")
 	partStr := r.URL.Query().Get("partition")
 	group := r.URL.Query().Get("group")
+	log.Printf("Broker received consume request: topic=%s, partition=%s, group=%s", topic, partStr, group)
+	
 	if topic == "" || group == "" {
+		log.Printf("Rejecting consume request: topic and group required")
 		http.Error(w, "topic and group required", http.StatusBadRequest)
 		return
 	}
@@ -423,7 +436,13 @@ func (b *Broker) consumeHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		msg, err := p.fetchAndTrack(group)
 		if err != nil {
-			// partition closed
+			// Check if it's a timeout (no messages available) vs partition closed
+			if err.Error() == "no messages available" {
+				// Just continue polling - don't send anything to client
+				time.Sleep(1 * time.Second) // Small delay before retry
+				continue
+			}
+			// partition closed or other error
 			return
 		}
 		data, _ := json.Marshal(msg)
@@ -483,6 +502,28 @@ func (b *Broker) topicsHandler(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(out)
 }
 
+func (b *Broker) healthHandler(w http.ResponseWriter, r *http.Request) {
+	// Simple health check - return owned partitions count
+	b.partitionsMu.RLock()
+	totalPartitions := 0
+	for _, pm := range b.partitions {
+		totalPartitions += len(pm)
+	}
+	b.partitionsMu.RUnlock()
+
+	health := map[string]interface{}{
+		"status":           "healthy",
+		"broker_index":     b.brokerIndex,
+		"broker_count":     b.brokerCount,
+		"owned_partitions": totalPartitions,
+		"timestamp":        time.Now().UTC(),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(health)
+}
+
 func main() {
 	// Initialize Prometheus metrics
 	metrics.InitMetrics("msg-queue-service")
@@ -539,6 +580,7 @@ func main() {
 	mux.HandleFunc("/consume", broker.consumeHandler)
 	mux.HandleFunc("/ack", broker.ackHandler)
 	mux.HandleFunc("/topics", broker.topicsHandler)
+	mux.HandleFunc("/health", broker.healthHandler)
 
 	// Add Prometheus metrics endpoint
 	mux.Handle("/metrics", metrics.MetricsHandler())

@@ -8,17 +8,24 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
 // HTTPMessageQueue implements a client for the msg_queue service
 type HTTPMessageQueue struct {
-	baseURL string
-	client  *http.Client
-	topic   string
-	group   string
-	name    string
+	baseURL      string
+	client       *http.Client
+	topic        string
+	group        string
+	name         string
+	
+	// Round-robin partition assignment
+	maxPartitions int
+	counter       uint64
 }
 
 // Message represents a message from the queue
@@ -32,20 +39,43 @@ type QueueMessage struct {
 
 // NewHTTPMessageQueue creates a new HTTP message queue client
 func NewHTTPMessageQueue(baseURL, topic, group, name string) (*HTTPMessageQueue, error) {
+	// Get max partitions from environment, default to 4
+	maxPartitions := 4
+	if envPartitions := os.Getenv("MAX_PARTITIONS"); envPartitions != "" {
+		if parsed, err := strconv.Atoi(envPartitions); err == nil && parsed > 0 {
+			maxPartitions = parsed
+		}
+	}
+
 	return &HTTPMessageQueue{
-		baseURL: baseURL,
-		client:  &http.Client{Timeout: 30 * time.Second},
-		topic:   topic,
-		group:   group,
-		name:    name,
+		baseURL:       baseURL,
+		client:        &http.Client{Timeout: 30 * time.Second},
+		topic:         topic,
+		group:         group,
+		name:          name,
+		maxPartitions: maxPartitions,
+		counter:       0,
 	}, nil
+}
+
+// calculatePartition returns the next partition in round-robin fashion
+func (h *HTTPMessageQueue) calculatePartition(topic string) int {
+	// Atomic increment for thread safety
+	current := atomic.AddUint64(&h.counter, 1)
+	return int((current - 1) % uint64(h.maxPartitions))
 }
 
 // Publish sends a message to the queue
 func (h *HTTPMessageQueue) Publish(topic string, payload []byte) error {
-	// Let the broker auto-assign partition - don't specify partition parameter
-	url := fmt.Sprintf("%s/produce?topic=%s", h.baseURL, topic)
+	// Calculate partition using topic as key (client-side partition assignment)
+	partition := h.calculatePartition(topic)
 	
+	// Log partition assignment for visibility
+	fmt.Printf("[%s] Publishing to topic=%s, partition=%d (round-robin assignment)\n", h.name, topic, partition)
+	
+	// Send partition explicitly to proxy - no key needed
+	url := fmt.Sprintf("%s/produce?topic=%s&partition=%d", h.baseURL, topic, partition)
+
 	// Create request body with payload
 	reqBody := map[string]string{
 		"payload": string(payload),
@@ -54,54 +84,58 @@ func (h *HTTPMessageQueue) Publish(topic string, payload []byte) error {
 	if err != nil {
 		return fmt.Errorf("failed to marshal payload: %w", err)
 	}
-	
+
 	resp, err := h.client.Post(url, "application/json", bytes.NewBuffer(jsonBody))
 	if err != nil {
 		return fmt.Errorf("failed to publish message: %w", err)
 	}
 	defer resp.Body.Close()
-	
+
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("publish failed with status %d: %s", resp.StatusCode, string(body))
 	}
-	
+
 	return nil
 }
 
 // Subscribe starts consuming messages from the queue
 func (h *HTTPMessageQueue) Subscribe(handler func(string, []byte, string) error) error {
-	// Let the broker auto-assign partition - don't specify partition parameter
-	url := fmt.Sprintf("%s/consume?topic=%s&group=%s", h.baseURL, h.topic, h.group)
+	// Calculate partition using round-robin assignment like in Publish
+	partition := h.calculatePartition(h.topic)
+	url := fmt.Sprintf("%s/consume?topic=%s&partition=%d&group=%s", h.baseURL, h.topic, partition, h.group)
 	
+	// Log which partition this consumer is using
+	fmt.Printf("[%s] Consumer subscribing to topic=%s, partition=%d (round-robin assignment)\n", h.name, h.topic, partition)
+
 	// Create context for cancellation
 	ctx := context.Background()
-	
+
 	for {
 		req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 		if err != nil {
 			return fmt.Errorf("failed to create request: %w", err)
 		}
-		
+
 		resp, err := h.client.Do(req)
 		if err != nil {
 			return fmt.Errorf("failed to start consuming: %w", err)
 		}
-		
+
 		if resp.StatusCode != http.StatusOK {
 			body, _ := io.ReadAll(resp.Body)
 			resp.Body.Close()
 			return fmt.Errorf("consume failed with status %d: %s", resp.StatusCode, string(body))
 		}
-		
+
 		// Parse Server-Sent Events
 		scanner := bufio.NewScanner(resp.Body)
 		var messageID string
 		var messageData string
-		
+
 		for scanner.Scan() {
 			line := scanner.Text()
-			
+
 			if strings.HasPrefix(line, "id: ") {
 				messageID = strings.TrimPrefix(line, "id: ")
 			} else if strings.HasPrefix(line, "data: ") {
@@ -115,7 +149,7 @@ func (h *HTTPMessageQueue) Subscribe(handler func(string, []byte, string) error)
 					messageData = ""
 					continue
 				}
-				
+
 				// Process the message
 				if err := handler(msg.Topic, []byte(msg.Payload), msg.ID); err != nil {
 					// Log error but continue processing
@@ -126,19 +160,19 @@ func (h *HTTPMessageQueue) Subscribe(handler func(string, []byte, string) error)
 						fmt.Printf("Failed to ack message %s: %v\n", msg.ID, err)
 					}
 				}
-				
+
 				// Reset for next message
 				messageID = ""
 				messageData = ""
 			}
 		}
-		
+
 		resp.Body.Close()
-		
+
 		if err := scanner.Err(); err != nil {
 			fmt.Printf("Scanner error: %v\n", err)
 		}
-		
+
 		// Wait a bit before reconnecting
 		time.Sleep(time.Second)
 	}
@@ -147,7 +181,7 @@ func (h *HTTPMessageQueue) Subscribe(handler func(string, []byte, string) error)
 // ackMessage acknowledges a processed message
 func (h *HTTPMessageQueue) ackMessage(topic string, partition int, messageID string) error {
 	url := fmt.Sprintf("%s/ack?topic=%s&partition=%d&group=%s", h.baseURL, topic, partition, h.group)
-	
+
 	reqBody := map[string]string{
 		"id": messageID,
 	}
@@ -155,18 +189,18 @@ func (h *HTTPMessageQueue) ackMessage(topic string, partition int, messageID str
 	if err != nil {
 		return fmt.Errorf("failed to marshal ack request: %w", err)
 	}
-	
+
 	resp, err := h.client.Post(url, "application/json", bytes.NewBuffer(jsonBody))
 	if err != nil {
 		return fmt.Errorf("failed to ack message: %w", err)
 	}
 	defer resp.Body.Close()
-	
+
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("ack failed with status %d: %s", resp.StatusCode, string(body))
 	}
-	
+
 	return nil
 }
 
@@ -179,22 +213,22 @@ func (h *HTTPMessageQueue) Close() error {
 // GetTopics returns available topics (for compatibility)
 func (h *HTTPMessageQueue) GetTopics() (map[string][]int, error) {
 	url := fmt.Sprintf("%s/topics", h.baseURL)
-	
+
 	resp, err := h.client.Get(url)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get topics: %w", err)
 	}
 	defer resp.Body.Close()
-	
+
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		return nil, fmt.Errorf("get topics failed with status %d: %s", resp.StatusCode, string(body))
 	}
-	
+
 	var topics map[string][]int
 	if err := json.NewDecoder(resp.Body).Decode(&topics); err != nil {
 		return nil, fmt.Errorf("failed to decode topics response: %w", err)
 	}
-	
+
 	return topics, nil
 }
