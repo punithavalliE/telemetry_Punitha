@@ -65,16 +65,20 @@ spec:
         # Add health checks
         readinessProbe:
           httpGet:
-            path: /topics
+            path: {{ .Values.msgQueue.healthCheck.path }}
             port: {{ .Values.msgQueue.service.port }}
-          initialDelaySeconds: 10
-          periodSeconds: 5
+          initialDelaySeconds: {{ .Values.msgQueue.healthCheck.readinessInitialDelaySeconds }}
+          periodSeconds: {{ .Values.msgQueue.healthCheck.readinessPeriodSeconds }}
+          timeoutSeconds: {{ .Values.msgQueue.healthCheck.readinessTimeoutSeconds }}
+          failureThreshold: {{ .Values.msgQueue.healthCheck.readinessFailureThreshold }}
         livenessProbe:
           httpGet:
-            path: /topics
+            path: {{ .Values.msgQueue.healthCheck.path }}
             port: {{ .Values.msgQueue.service.port }}
-          initialDelaySeconds: 15
-          periodSeconds: 20
+          initialDelaySeconds: {{ .Values.msgQueue.healthCheck.initialDelaySeconds }}
+          periodSeconds: {{ .Values.msgQueue.healthCheck.periodSeconds }}
+          timeoutSeconds: {{ .Values.msgQueue.healthCheck.timeoutSeconds }}
+          failureThreshold: {{ .Values.msgQueue.healthCheck.failureThreshold }}
         resources:
           requests:
             memory: "128Mi"

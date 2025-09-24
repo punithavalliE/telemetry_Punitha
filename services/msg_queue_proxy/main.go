@@ -21,12 +21,14 @@ import (
 
 // ProxyConfig holds configuration for the smart proxy
 type ProxyConfig struct {
-	Port           string
-	BrokerService  string // Kubernetes service name for brokers
-	BrokerCount    int
-	VirtualNodes   int
-	MaxPartitions  int
-	HealthInterval time.Duration
+	Port              string
+	BrokerService     string // Kubernetes service name for brokers
+	BrokerCount       int
+	VirtualNodes      int
+	MaxPartitions     int
+	HealthInterval    time.Duration
+	RequestTimeout    time.Duration
+	ConnectionTimeout time.Duration
 }
 
 // SmartProxy routes requests to appropriate brokers using consistent hashing
@@ -82,11 +84,11 @@ func NewSmartProxy(config ProxyConfig) *SmartProxy {
 			BrokerErrors:        make(map[string]int64),
 		},
 		client: &http.Client{
-			Timeout: 30 * time.Second,
+			Timeout: config.RequestTimeout,
 			Transport: &http.Transport{
 				MaxIdleConns:        100,
 				MaxIdleConnsPerHost: 10,
-				IdleConnTimeout:     90 * time.Second,
+				IdleConnTimeout:     config.ConnectionTimeout,
 			},
 		},
 	}
@@ -132,8 +134,8 @@ func (sp *SmartProxy) Start() error {
 	server := &http.Server{
 		Addr:         ":" + sp.config.Port,
 		Handler:      mux,
-		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 30 * time.Second,
+		ReadTimeout:  sp.config.RequestTimeout,
+		WriteTimeout: sp.config.RequestTimeout,
 	}
 
 	return server.ListenAndServe()
@@ -143,10 +145,12 @@ func (sp *SmartProxy) Start() error {
 func (sp *SmartProxy) discoverBrokers() error {
 	sp.brokerEndpoints = make([]string, 0, sp.config.BrokerCount)
 
-	// For now, just use the main service and let Kubernetes load balance
-	// TODO: Implement proper StatefulSet DNS resolution later
-	endpoint := fmt.Sprintf("http://%s:8080", strings.Split(sp.config.BrokerService, ".")[0])
+	// Use proper StatefulSet DNS resolution for individual pods
+	serviceName := strings.Split(sp.config.BrokerService, ".")[0]
+	headlessServiceName := serviceName + "-headless" // StatefulSet uses headless service
 	for i := 0; i < sp.config.BrokerCount; i++ {
+		// StatefulSet pods have predictable DNS names: <pod-name>.<headless-service>.<namespace>.svc.cluster.local
+		endpoint := fmt.Sprintf("http://%s-%d.%s.default.svc.cluster.local:8080", serviceName, i, headlessServiceName)
 		sp.brokerEndpoints = append(sp.brokerEndpoints, endpoint)
 		sp.healthyBrokers[endpoint] = true // Assume healthy initially
 	}
@@ -660,12 +664,14 @@ func getStatusCode(resp *http.Response) int {
 
 func loadConfig() ProxyConfig {
 	config := ProxyConfig{
-		Port:           getEnv("PORT", "8080"),
-		BrokerService:  getEnv("BROKER_SERVICE", "msg-queue"),
-		BrokerCount:    getEnvInt("BROKER_COUNT", 3),
-		VirtualNodes:   getEnvInt("VIRTUAL_NODES", 150),
-		MaxPartitions:  getEnvInt("MAX_PARTITIONS", 12),
-		HealthInterval: time.Duration(getEnvInt("HEALTH_INTERVAL_SECONDS", 30)) * time.Second,
+		Port:              getEnv("PORT", "8080"),
+		BrokerService:     getEnv("BROKER_SERVICE", "msg-queue"),
+		BrokerCount:       getEnvInt("BROKER_COUNT", 2),
+		VirtualNodes:      getEnvInt("VIRTUAL_NODES", 150),
+		MaxPartitions:     getEnvInt("MAX_PARTITIONS", 2),
+		HealthInterval:    time.Duration(getEnvInt("HEALTH_INTERVAL_SECONDS", 30)) * time.Second,
+		RequestTimeout:    time.Duration(getEnvInt("REQUEST_TIMEOUT_SECONDS", 60)) * time.Second,
+		ConnectionTimeout: time.Duration(getEnvInt("CONNECTION_TIMEOUT_SECONDS", 10)) * time.Second,
 	}
 
 	log.Printf("Proxy configuration: %+v", config)

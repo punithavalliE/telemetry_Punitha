@@ -49,6 +49,14 @@ spec:
           value: {{ .Values.msgQueueProxy.env.maxPartitions | quote }}
         - name: HEALTH_INTERVAL_SECONDS
           value: {{ .Values.msgQueueProxy.env.healthIntervalSeconds | quote }}
+        {{- if .Values.msgQueueProxy.env.requestTimeoutSeconds }}
+        - name: REQUEST_TIMEOUT_SECONDS
+          value: {{ .Values.msgQueueProxy.env.requestTimeoutSeconds | quote }}
+        {{- end }}
+        {{- if .Values.msgQueueProxy.env.connectionTimeoutSeconds }}
+        - name: CONNECTION_TIMEOUT_SECONDS
+          value: {{ .Values.msgQueueProxy.env.connectionTimeoutSeconds | quote }}
+        {{- end }}
         resources:
           {{- toYaml .Values.msgQueueProxy.resources | nindent 10 }}
         livenessProbe:

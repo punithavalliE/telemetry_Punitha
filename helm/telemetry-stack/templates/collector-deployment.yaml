@@ -60,16 +60,22 @@ spec:
               key: service-token
         - name: MSG_QUEUE_CONSUMER_NAME
           value: {{ .Values.collector.env.msgQueueConsumerName | quote }}
+        - name: MAX_PARTITIONS
+          value: {{ .Values.collector.env.maxPartitions | quote }}
         readinessProbe:
           httpGet:
-            path: /health
+            path: {{ .Values.collector.healthCheck.path }}
             port: {{ .Values.collector.service.port }}
-          initialDelaySeconds: 10
-          periodSeconds: 5
+          initialDelaySeconds: {{ .Values.collector.healthCheck.readinessInitialDelaySeconds }}
+          periodSeconds: {{ .Values.collector.healthCheck.readinessPeriodSeconds }}
+          timeoutSeconds: {{ .Values.collector.healthCheck.readinessTimeoutSeconds }}
+          failureThreshold: {{ .Values.collector.healthCheck.readinessFailureThreshold }}
         livenessProbe:
           httpGet:
-            path: /health
+            path: {{ .Values.collector.healthCheck.path }}
             port: {{ .Values.collector.service.port }}
-          initialDelaySeconds: 30
-          periodSeconds: 10
+          initialDelaySeconds: {{ .Values.collector.healthCheck.initialDelaySeconds }}
+          periodSeconds: {{ .Values.collector.healthCheck.periodSeconds }}
+          timeoutSeconds: {{ .Values.collector.healthCheck.timeoutSeconds }}
+          failureThreshold: {{ .Values.collector.healthCheck.failureThreshold }}
 {{- end }}

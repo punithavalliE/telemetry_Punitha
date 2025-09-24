@@ -44,6 +44,8 @@ spec:
           value: {{ .Values.streamer.env.msgQueueGroup | quote }}
         - name: MSG_QUEUE_PRODUCER_NAME
           value: {{ .Values.streamer.env.msgQueueProducerName | quote }}
+        - name: MAX_PARTITIONS
+          value: {{ .Values.streamer.env.maxPartitions | quote }}
         # Security credentials from Kubernetes secrets
         - name: SERVICE_TOKEN
           valueFrom:
@@ -55,21 +57,21 @@ spec:
         # Readiness probe - check if streamer service is ready
         readinessProbe:
           httpGet:
-            path: /health
+            path: {{ .Values.streamer.healthCheck.path }}
             port: {{ .Values.streamer.service.port }}
-          initialDelaySeconds: 10
-          periodSeconds: 5
-          timeoutSeconds: 3
-          failureThreshold: 3
+          initialDelaySeconds: {{ .Values.streamer.healthCheck.readinessInitialDelaySeconds }}
+          periodSeconds: {{ .Values.streamer.healthCheck.readinessPeriodSeconds }}
+          timeoutSeconds: {{ .Values.streamer.healthCheck.readinessTimeoutSeconds }}
+          failureThreshold: {{ .Values.streamer.healthCheck.readinessFailureThreshold }}
         # Liveness probe - check if streamer service is alive
         livenessProbe:
           httpGet:
-            path: /health
+            path: {{ .Values.streamer.healthCheck.path }}
             port: {{ .Values.streamer.service.port }}
-          initialDelaySeconds: 30
-          periodSeconds: 10
-          timeoutSeconds: 3
-          failureThreshold: 3
+          initialDelaySeconds: {{ .Values.streamer.healthCheck.initialDelaySeconds }}
+          periodSeconds: {{ .Values.streamer.healthCheck.periodSeconds }}
+          timeoutSeconds: {{ .Values.streamer.healthCheck.timeoutSeconds }}
+          failureThreshold: {{ .Values.streamer.healthCheck.failureThreshold }}
         # Init container to wait for message queue to be ready
       initContainers:
       - name: wait-for-msg-queue

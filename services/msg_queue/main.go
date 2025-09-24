@@ -82,7 +82,7 @@ func newPartition(topic string, index int, visTO time.Duration) (*Partition, err
 	p := &Partition{
 		topic:   topic,
 		index:   index,
-		queue:   make(chan Message, 1000),
+		queue:   make(chan Message, 5000),
 		pending: make(map[string]pending),
 		file:    f,
 		visTO:   visTO,
@@ -90,13 +90,14 @@ func newPartition(topic string, index int, visTO time.Duration) (*Partition, err
 		cancel:  cancel,
 	}
 	// load persisted messages into queue asynchronously to avoid blocking
-	go func() {
-		if err := p.loadFromFile(); err != nil {
-			log.Printf("partition %s-%d: failed to load from file: %v", topic, index, err)
-		} else {
-			log.Printf("partition %s-%d: successfully loaded messages from file", topic, index)
-		}
-	}()
+	// Commenting out file loading to test timeout issues
+	// go func() {
+	// 	if err := p.loadFromFile(); err != nil {
+	// 		log.Printf("partition %s-%d: failed to load from file: %v", topic, index, err)
+	// 	} else {
+	// 		log.Printf("partition %s-%d: successfully loaded messages from file", topic, index)
+	// 	}
+	// }()
 	// start monitor for timeouts
 	go p.monitorPending()
 	return p, nil
@@ -116,7 +117,9 @@ func (p *Partition) persist(m Message) error {
 	if err != nil {
 		return err
 	}
-	return p.file.Sync()
+	// Commenting out sync to avoid blocking HTTP responses
+	// return p.file.Sync()
+	return nil
 }
 
 func (p *Partition) loadFromFile() error {
@@ -148,15 +151,17 @@ func (p *Partition) loadFromFile() error {
 
 func (p *Partition) enqueue(m Message) error {
 	// persist then push to queue
-	if err := p.persist(m); err != nil {
+	/*if err := p.persist(m); err != nil {
 		return err
-	}
+	}*/
+	log.Printf("partition %s-%d: queue size before enqueue: %d", p.topic, p.index, len(p.queue))
 	p.queue <- m
 	return nil
 }
 
 func (p *Partition) monitorPending() {
-	ticker := time.NewTicker(time.Second)
+	ticker := time.NewTicker(50 * time.Second)
+
 	defer ticker.Stop()
 	for {
 		select {
@@ -171,6 +176,7 @@ func (p *Partition) monitorPending() {
 					// remove from pending and re-enqueue
 					delete(p.pending, id)
 					// push back to queue (as new attempt; ID remains same)
+					log.Printf("partition %s-%d: queue size before requeue: %d", p.topic, p.index, len(p.queue))
 					select {
 					case p.queue <- pd.msg:
 					default:
@@ -289,7 +295,7 @@ func (b *Broker) createPartitionIfNotExists(topic string, partition int) (*Parti
 	return p, nil
 }
 
-func (b *Broker) getPartition(topic string, partition int) (*Partition, error) {
+func (b *Broker) getPartition(topic string, partition int, isProduceHandling bool) (*Partition, error) {
 	b.partitionsMu.RLock()
 	pm, ok := b.partitions[topic]
 	if !ok {
@@ -300,6 +306,10 @@ func (b *Broker) getPartition(topic string, partition int) (*Partition, error) {
 	b.partitionsMu.RUnlock()
 
 	if !exists {
+		// Only create partition if this is produce handling
+		if !isProduceHandling {
+			return nil, fmt.Errorf("partition %d does not exist for topic %s", partition, topic)
+		}
 		// Partition doesn't exist, create it dynamically
 		return b.createPartitionIfNotExists(topic, partition)
 	}
@@ -352,7 +362,7 @@ func (b *Broker) produceHandler(w http.ResponseWriter, r *http.Request) {
 		Topic:     topic,
 		Partition: part,
 	}
-	p, err := b.getPartition(topic, part)
+	p, err := b.getPartition(topic, part, true)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -393,7 +403,7 @@ func (b *Broker) consumeHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad partition", http.StatusBadRequest)
 		return
 	}
-	p, err := b.getPartition(topic, part)
+	p, err := b.getPartition(topic, part, false)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -425,7 +435,8 @@ func (b *Broker) consumeHandler(w http.ResponseWriter, r *http.Request) {
 		data, _ := json.Marshal(msg)
 		// SSE format
 		fmt.Fprintf(w, "id: %s\n", msg.ID)
-		fmt.Fprintf(w, "data: %s\n\n", string(data))
+		fmt.Fprintf(w, "data: %s\n", string(data))
+		fmt.Fprintf(w, "partition: %d\n\n", msg.Partition)
 		flusher.Flush()
 		// continue to next message
 	}
@@ -446,7 +457,7 @@ func (b *Broker) ackHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad partition", http.StatusBadRequest)
 		return
 	}
-	p, err := b.getPartition(topic, part)
+	p, err := b.getPartition(topic, part, false)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return

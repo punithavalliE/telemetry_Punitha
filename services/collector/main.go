@@ -46,7 +46,7 @@ func NewCollectorService() *CollectorService {
 		}
 		logger.Printf("Using HTTP message queue at %s, topic=%s, group=%s, name=%s", cfg.MsgQueueAddr, cfg.MsgQueueTopic, cfg.MsgQueueGroup, cfg.MsgQueueConsumerName)
 	} else {
-		// Use Redis (existing behavior) 
+		// Use Redis (initial trial version)
 		redisAddr := os.Getenv("REDIS_ADDR")
 		if redisAddr == "" {
 			redisAddr = "redis:6379"

@@ -23,10 +23,9 @@ type HTTPMessageQueue struct {
 	group   string
 	name    string
 
-	// Round-robin partition assignment - separate counters for publish/subscribe
-	maxPartitions    int
-	publishCounter   uint64
-	subscribeCounter uint64
+	// Round-robin partition assignment for publishing
+	maxPartitions  int
+	publishCounter uint64
 }
 
 // Message represents a message from the queue
@@ -40,8 +39,8 @@ type QueueMessage struct {
 
 // NewHTTPMessageQueue creates a new HTTP message queue client
 func NewHTTPMessageQueue(baseURL, topic, group, name string) (*HTTPMessageQueue, error) {
-	// Get max partitions from environment, default to 4
-	maxPartitions := 4
+	// Get max partitions from environment, default to 2
+	maxPartitions := 2
 	if envPartitions := os.Getenv("MAX_PARTITIONS"); envPartitions != "" {
 		if parsed, err := strconv.Atoi(envPartitions); err == nil && parsed > 0 {
 			maxPartitions = parsed
@@ -49,14 +48,13 @@ func NewHTTPMessageQueue(baseURL, topic, group, name string) (*HTTPMessageQueue,
 	}
 
 	return &HTTPMessageQueue{
-		baseURL:          baseURL,
-		client:           &http.Client{Timeout: 60 * time.Second},
-		topic:            topic,
-		group:            group,
-		name:             name,
-		maxPartitions:    maxPartitions,
-		publishCounter:   0,
-		subscribeCounter: 0,
+		baseURL:        baseURL,
+		client:         &http.Client{Timeout: 120 * time.Second}, // Increased timeout for better resilience
+		topic:          topic,
+		group:          group,
+		name:           name,
+		maxPartitions:  maxPartitions,
+		publishCounter: 0,
 	}, nil
 }
 
@@ -67,14 +65,7 @@ func (h *HTTPMessageQueue) calculatePublishPartition(topic string) int {
 	return int((current - 1) % uint64(h.maxPartitions))
 }
 
-// calculateSubscribePartition returns the next partition for subscribing in round-robin fashion
-func (h *HTTPMessageQueue) calculateSubscribePartition(topic string) int {
-	// Atomic increment for thread safety
-	current := atomic.AddUint64(&h.subscribeCounter, 1)
-	return int((current - 1) % uint64(h.maxPartitions))
-}
-
-// Publish sends a message to the queue
+// Publish sends a message to the queue with retry logic
 func (h *HTTPMessageQueue) Publish(topic string, payload []byte) error {
 	// Calculate partition using separate publish counter (client-side partition assignment)
 	partition := h.calculatePublishPartition(topic)
@@ -94,28 +85,63 @@ func (h *HTTPMessageQueue) Publish(topic string, payload []byte) error {
 		return fmt.Errorf("failed to marshal payload: %w", err)
 	}
 
-	resp, err := h.client.Post(url, "application/json", bytes.NewBuffer(jsonBody))
-	if err != nil {
-		return fmt.Errorf("failed to publish message: %w", err)
-	}
-	defer resp.Body.Close()
+	// Retry logic for publish
+	maxRetries := 3
+	baseDelay := time.Second
 
-	if resp.StatusCode != http.StatusOK {
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		if attempt > 0 {
+			// Exponential backoff
+			delay := time.Duration(attempt) * baseDelay
+			fmt.Printf("[%s] Retrying publish to partition %d after %v (attempt %d/%d)\n", h.name, partition, delay, attempt+1, maxRetries)
+			time.Sleep(delay)
+		}
+
+		resp, err := h.client.Post(url, "application/json", bytes.NewBuffer(jsonBody))
+		if err != nil {
+			if attempt == maxRetries-1 {
+				return fmt.Errorf("failed to publish message after %d attempts: %w", maxRetries, err)
+			}
+			fmt.Printf("[%s] Publish attempt %d failed: %v\n", h.name, attempt+1, err)
+			continue
+		}
+
+		defer resp.Body.Close()
+
+		if resp.StatusCode == http.StatusOK {
+			return nil // Success!
+		}
+
 		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("publish failed with status %d: %s", resp.StatusCode, string(body))
+		if attempt == maxRetries-1 {
+			return fmt.Errorf("publish failed after %d attempts with status %d: %s", maxRetries, resp.StatusCode, string(body))
+		}
+		fmt.Printf("[%s] Publish attempt %d failed with status %d: %s\n", h.name, attempt+1, resp.StatusCode, string(body))
 	}
 
-	return nil
+	return fmt.Errorf("publish failed after %d attempts", maxRetries)
 }
 
-// Subscribe starts consuming messages from the queue
+// Subscribe starts consuming messages from the queue (consumes from all partitions)
 func (h *HTTPMessageQueue) Subscribe(handler func(string, []byte, string) error) error {
-	// Calculate partition using separate subscribe counter
-	partition := h.calculateSubscribePartition(h.topic)
-	url := fmt.Sprintf("%s/consume?topic=%s&partition=%d&group=%s", h.baseURL, h.topic, partition, h.group)
+	// Start consumer goroutines for all partitions
+	errChan := make(chan error, h.maxPartitions)
 
-	// Log which partition this consumer is using
-	fmt.Printf("[%s] Consumer subscribing to topic=%s, partition=%d (subscribe round-robin assignment)\n", h.name, h.topic, partition)
+	for partition := 0; partition < h.maxPartitions; partition++ {
+		partition := partition // capture loop variable
+		go func() {
+			fmt.Printf("[%s] Starting consumer for partition %d\n", h.name, partition)
+			h.consumeFromPartition(partition, handler, errChan)
+		}()
+	}
+
+	// Wait for any consumer to report an error (this blocks indefinitely)
+	return <-errChan
+}
+
+// consumeFromPartition handles consumption from a specific partition
+func (h *HTTPMessageQueue) consumeFromPartition(partition int, handler func(string, []byte, string) error, errChan chan error) {
+	url := fmt.Sprintf("%s/consume?topic=%s&partition=%d&group=%s", h.baseURL, h.topic, partition, h.group)
 
 	// Create context for cancellation
 	ctx := context.Background()
@@ -123,18 +149,38 @@ func (h *HTTPMessageQueue) Subscribe(handler func(string, []byte, string) error)
 	for {
 		req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 		if err != nil {
-			return fmt.Errorf("failed to create request: %w", err)
+			errChan <- fmt.Errorf("failed to create request: %w", err)
+			return
 		}
 
 		resp, err := h.client.Do(req)
 		if err != nil {
-			return fmt.Errorf("failed to start consuming: %w", err)
+			// Check if it's a timeout error
+			if strings.Contains(err.Error(), "timeout") || strings.Contains(err.Error(), "deadline exceeded") {
+				fmt.Printf("[%s] Consume timeout from partition %d, retrying in 5s: %v\n", h.name, partition, err)
+				time.Sleep(5 * time.Second)
+			} else {
+				fmt.Printf("[%s] Failed to start consuming from partition %d: %v\n", h.name, partition, err)
+				time.Sleep(time.Second)
+			}
+			continue
 		}
 
 		if resp.StatusCode != http.StatusOK {
 			body, _ := io.ReadAll(resp.Body)
 			resp.Body.Close()
-			return fmt.Errorf("consume failed with status %d: %s", resp.StatusCode, string(body))
+			
+			// Use longer delay for server errors
+			delay := time.Second
+			if resp.StatusCode >= 500 {
+				delay = 5 * time.Second
+				fmt.Printf("[%s] Server error from partition %d (status %d), retrying in %v: %s\n", h.name, partition, resp.StatusCode, delay, string(body))
+			} else {
+				fmt.Printf("[%s] Consume failed from partition %d with status %d: %s\n", h.name, partition, resp.StatusCode, string(body))
+			}
+			
+			time.Sleep(delay)
+			continue
 		}
 
 		// Parse Server-Sent Events
@@ -179,15 +225,23 @@ func (h *HTTPMessageQueue) Subscribe(handler func(string, []byte, string) error)
 		resp.Body.Close()
 
 		if err := scanner.Err(); err != nil {
-			fmt.Printf("Scanner error: %v\n", err)
+			// Check if it's a timeout/connection error
+			if strings.Contains(err.Error(), "timeout") || strings.Contains(err.Error(), "deadline exceeded") || strings.Contains(err.Error(), "EOF") {
+				fmt.Printf("[%s] Connection lost from partition %d, reconnecting in 5s: %v\n", h.name, partition, err)
+				time.Sleep(5 * time.Second)
+			} else {
+				fmt.Printf("[%s] Scanner error from partition %d: %v\n", h.name, partition, err)
+				time.Sleep(time.Second)
+			}
+		} else {
+			// Normal disconnect, wait briefly before reconnecting
+			fmt.Printf("[%s] Connection closed from partition %d, reconnecting...\n", h.name, partition)
+			time.Sleep(time.Second)
 		}
-
-		// Wait a bit before reconnecting
-		time.Sleep(time.Second)
 	}
 }
 
-// ackMessage acknowledges a processed message
+// ackMessage acknowledges a processed message with retry logic
 func (h *HTTPMessageQueue) ackMessage(topic string, partition int, messageID string) error {
 	url := fmt.Sprintf("%s/ack?topic=%s&partition=%d&group=%s", h.baseURL, topic, partition, h.group)
 
@@ -199,18 +253,36 @@ func (h *HTTPMessageQueue) ackMessage(topic string, partition int, messageID str
 		return fmt.Errorf("failed to marshal ack request: %w", err)
 	}
 
-	resp, err := h.client.Post(url, "application/json", bytes.NewBuffer(jsonBody))
-	if err != nil {
-		return fmt.Errorf("failed to ack message: %w", err)
-	}
-	defer resp.Body.Close()
+	// Retry ACK a few times
+	maxRetries := 2
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		if attempt > 0 {
+			fmt.Printf("[%s] Retrying ACK for message %s (attempt %d/%d)\n", h.name, messageID, attempt+1, maxRetries)
+			time.Sleep(time.Duration(attempt) * time.Second)
+		}
 
-	if resp.StatusCode != http.StatusOK {
+		resp, err := h.client.Post(url, "application/json", bytes.NewBuffer(jsonBody))
+		if err != nil {
+			if attempt == maxRetries-1 {
+				return fmt.Errorf("failed to ack message after %d attempts: %w", maxRetries, err)
+			}
+			fmt.Printf("[%s] ACK attempt %d failed: %v\n", h.name, attempt+1, err)
+			continue
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode == http.StatusOK {
+			return nil // Success!
+		}
+
 		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("ack failed with status %d: %s", resp.StatusCode, string(body))
+		if attempt == maxRetries-1 {
+			return fmt.Errorf("ack failed after %d attempts with status %d: %s", maxRetries, resp.StatusCode, string(body))
+		}
+		fmt.Printf("[%s] ACK attempt %d failed with status %d: %s\n", h.name, attempt+1, resp.StatusCode, string(body))
 	}
 
-	return nil
+	return fmt.Errorf("ack failed after %d attempts", maxRetries)
 }
 
 // Close closes the HTTP client (no-op for HTTP client)

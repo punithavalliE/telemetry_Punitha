@@ -14,12 +14,13 @@ type Config struct {
 	InfluxDBBucket string
 
 	// Message Queue configuration
-	UseHTTPQueue        bool
-	MsgQueueAddr        string
-	MsgQueueTopic       string
-	MsgQueueGroup       string
+	UseHTTPQueue         bool
+	MsgQueueAddr         string
+	MsgQueueTopic        string
+	MsgQueueGroup        string
 	MsgQueueConsumerName string
 	MsgQueueProducerName string
+	MaxPartitions        int
 
 	// CSV Streaming configuration
 	CSVPath    string
@@ -45,6 +46,7 @@ func Load() Config {
 		MsgQueueGroup:        getEnv("MSG_QUEUE_GROUP", "telemetry_group"),
 		MsgQueueConsumerName: getEnv("MSG_QUEUE_CONSUMER_NAME", "collector"),
 		MsgQueueProducerName: getEnv("MSG_QUEUE_PRODUCER_NAME", "streamer"),
+		MaxPartitions:        getEnvInt("MAX_PARTITIONS", 2),
 
 		// CSV Streaming defaults
 		CSVPath:    getEnv("CSV_PATH", "/data/dcgm_metrics_20250718_134233.csv"),
