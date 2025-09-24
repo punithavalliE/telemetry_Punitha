@@ -35,36 +35,18 @@ func NewCollectorService() *CollectorService {
 	cfg := config.Load()
 
 	// Check if we should use HTTP message queue or Redis
-	useHTTPQueue := os.Getenv("USE_HTTP_QUEUE")
 	var queue shared.MessageQueue
 	var err error
 
-	if useHTTPQueue == "true" {
+	if cfg.UseHTTPQueue {
 		// Use HTTP message queue
-		queueAddr := os.Getenv("MSG_QUEUE_ADDR")
-		if queueAddr == "" {
-			queueAddr = "http://msg_queue:8080"
-		}
-		topic := os.Getenv("MSG_QUEUE_TOPIC")
-		if topic == "" {
-			topic = "telemetry"
-		}
-		group := os.Getenv("MSG_QUEUE_GROUP")
-		if group == "" {
-			group = "telemetry_group"
-		}
-		name := os.Getenv("MSG_QUEUE_CONSUMER_NAME")
-		if name == "" {
-			name = "collector"
-		}
-
-		queue, err = shared.NewHTTPMessageQueue(queueAddr, topic, group, name)
+		queue, err = shared.NewHTTPMessageQueue(cfg.MsgQueueAddr, cfg.MsgQueueTopic, cfg.MsgQueueGroup, cfg.MsgQueueConsumerName)
 		if err != nil {
 			logger.Fatalf("Failed to create HTTP message queue: %v", err)
 		}
-		logger.Printf("Using HTTP message queue at %s, topic=%s, group=%s, name=%s", queueAddr, topic, group, name)
+		logger.Printf("Using HTTP message queue at %s, topic=%s, group=%s, name=%s", cfg.MsgQueueAddr, cfg.MsgQueueTopic, cfg.MsgQueueGroup, cfg.MsgQueueConsumerName)
 	} else {
-		// Use Redis (existing behavior)
+		// Use Redis (existing behavior) 
 		redisAddr := os.Getenv("REDIS_ADDR")
 		if redisAddr == "" {
 			redisAddr = "redis:6379"
@@ -89,24 +71,7 @@ func NewCollectorService() *CollectorService {
 		logger.Printf("Using Redis stream queue at %s, stream=%s, group=%s, name=%s", redisAddr, stream, group, name)
 	}
 
-	influxURL := os.Getenv("INFLUXDB_URL")
-	if influxURL == "" {
-		influxURL = "http://influxdb:8086"
-	}
-	influxToken := os.Getenv("INFLUXDB_TOKEN")
-	if influxToken == "" {
-		influxToken = "supersecrettoken"
-	}
-	influxOrg := os.Getenv("INFLUXDB_ORG")
-	if influxOrg == "" {
-		influxOrg = "telemetryorg"
-	}
-	influxBucket := os.Getenv("INFLUXDB_BUCKET")
-	if influxBucket == "" {
-		influxBucket = "telem_bucket"
-	}
-
-	influxWriter := influx.NewInfluxWriter(influxURL, influxToken, influxOrg, influxBucket)
+	influxWriter := influx.NewInfluxWriter(cfg.InfluxDBURL, cfg.InfluxDBToken, cfg.InfluxDBOrg, cfg.InfluxDBBucket)
 
 	return &CollectorService{
 		queue:  queue,
@@ -120,10 +85,7 @@ func (cs *CollectorService) Start() {
 	cs.logger.Println("Starting collector service...")
 
 	// Start HTTP server for health checks
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8081"
-	}
+	port := cs.config.Port
 
 	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)

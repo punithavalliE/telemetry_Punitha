@@ -89,7 +89,7 @@ collector:
 msgQueue:
   enabled: true
   name: msg-queue
-  replicaCount: 2  # Scale to 2 replicas for load balancing
+  replicaCount: 1  # Scale to 2 replicas for load balancing
   useStatefulSet: true  # Use StatefulSet for proper broker indexing
   image:
     repository: msg-queue
@@ -129,7 +129,7 @@ msgQueue:
 msgQueueProxy:
   enabled: true
   name: msg-queue-proxy
-  replicaCount: 2
+  replicaCount: 1
   image:
     repository: msg-queue-proxy
     tag: latest

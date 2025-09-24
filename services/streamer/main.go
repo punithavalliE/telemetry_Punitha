@@ -31,35 +31,16 @@ func NewStreamerService() *StreamerService {
        cfg := config.Load()
 
        // Check if we should use HTTP message queue or Redis
-       useHTTPQueue := os.Getenv("USE_HTTP_QUEUE")
        var queue shared.MessageQueue
        var err error
        
-       if useHTTPQueue == "true" {
+       if cfg.UseHTTPQueue {
 	       // Use HTTP message queue
-	       queueAddr := os.Getenv("MSG_QUEUE_ADDR")
-	       if queueAddr == "" {
-		       queueAddr = "http://msg_queue:8080"
-	       }
-	       topic := os.Getenv("MSG_QUEUE_TOPIC")
-	       if topic == "" {
-		       topic = "telemetry"
-	       }
-	       group := os.Getenv("MSG_QUEUE_GROUP")
-	       if group == "" {
-		       group = "telemetry_group"
-	       }
-	       name := os.Getenv("MSG_QUEUE_PRODUCER_NAME")
-	       if name == "" {
-		       name = "streamer"
-	       }
-
-	       queue, err = shared.NewHTTPMessageQueue(queueAddr, topic, group, name)
+	       queue, err = shared.NewHTTPMessageQueue(cfg.MsgQueueAddr, cfg.MsgQueueTopic, cfg.MsgQueueGroup, cfg.MsgQueueProducerName)
 	       if err != nil {
 		       logger.Fatalf("Failed to create HTTP message queue: %v", err)
 	       }
-
-	       logger.Printf("Using HTTP message queue at %s, topic=%s, group=%s, name=%s", queueAddr, topic, group, name)
+	       logger.Printf("Using HTTP message queue at %s, topic=%s, group=%s, name=%s", cfg.MsgQueueAddr, cfg.MsgQueueTopic, cfg.MsgQueueGroup, cfg.MsgQueueProducerName)
        } else {
 	       // Use Redis (existing behavior)
 	       redisAddr := os.Getenv("REDIS_ADDR")

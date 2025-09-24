@@ -143,20 +143,12 @@ func (sp *SmartProxy) Start() error {
 func (sp *SmartProxy) discoverBrokers() error {
 	sp.brokerEndpoints = make([]string, 0, sp.config.BrokerCount)
 
-	// Check if we're dealing with a single broker deployment (brokerCount = 1)
-	if sp.config.BrokerCount == 1 {
-		// For single broker, connect directly to the service
-		endpoint := fmt.Sprintf("http://%s:8080", strings.Split(sp.config.BrokerService, ".")[0])
+	// For now, just use the main service and let Kubernetes load balance
+	// TODO: Implement proper StatefulSet DNS resolution later
+	endpoint := fmt.Sprintf("http://%s:8080", strings.Split(sp.config.BrokerService, ".")[0])
+	for i := 0; i < sp.config.BrokerCount; i++ {
 		sp.brokerEndpoints = append(sp.brokerEndpoints, endpoint)
 		sp.healthyBrokers[endpoint] = true // Assume healthy initially
-	} else {
-		// For Kubernetes StatefulSet, brokers are named: service-0, service-1, etc.
-		for i := 0; i < sp.config.BrokerCount; i++ {
-			endpoint := fmt.Sprintf("http://%s-%d.%s:8080",
-				strings.Split(sp.config.BrokerService, ".")[0], i, sp.config.BrokerService)
-			sp.brokerEndpoints = append(sp.brokerEndpoints, endpoint)
-			sp.healthyBrokers[endpoint] = true // Assume healthy initially
-		}
 	}
 
 	log.Printf("Discovered %d broker endpoints: %v", len(sp.brokerEndpoints), sp.brokerEndpoints)
@@ -279,9 +271,8 @@ func (sp *SmartProxy) produceHandler(w http.ResponseWriter, r *http.Request) {
 
 	topic := r.URL.Query().Get("topic")
 	partStr := r.URL.Query().Get("partition")
-	//key := r.URL.Query().Get("key")
 
-	log.Printf("Produce request params: topic=%s, partition=%s, key=%s", topic, partStr, key)
+	log.Printf("Produce request params: topic=%s, partition=%s", topic, partStr)
 
 	if topic == "" || partStr == "" {
 		http.Error(w, "topic and partition required", http.StatusBadRequest)
