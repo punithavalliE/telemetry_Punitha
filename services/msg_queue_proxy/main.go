@@ -197,7 +197,7 @@ func (sp *SmartProxy) getBrokerForTopicPartition(topic string, partition int) st
 }
 
 // assignPartition assigns a partition for a given topic/key
-func (sp *SmartProxy) assignPartition(topic, key string) int {
+/*func (sp *SmartProxy) assignPartition(topic, key string) int {
 	sp.mu.RLock()
 	defer sp.mu.RUnlock()
 
@@ -208,7 +208,7 @@ func (sp *SmartProxy) assignPartition(topic, key string) int {
 	// Simple round-robin for now
 	hash := sp.consistentHash.HashPartition(topic, sp.config.MaxPartitions)
 	return hash
-}
+}*/
 
 // initBrokerMetrics initializes broker-specific metrics maps
 func (sp *SmartProxy) initBrokerMetrics() {
@@ -279,27 +279,22 @@ func (sp *SmartProxy) produceHandler(w http.ResponseWriter, r *http.Request) {
 
 	topic := r.URL.Query().Get("topic")
 	partStr := r.URL.Query().Get("partition")
-	key := r.URL.Query().Get("key")
+	//key := r.URL.Query().Get("key")
 
 	log.Printf("Produce request params: topic=%s, partition=%s, key=%s", topic, partStr, key)
 
-	if topic == "" {
-		http.Error(w, "topic required", http.StatusBadRequest)
+	if topic == "" || partStr == "" {
+		http.Error(w, "topic and partition required", http.StatusBadRequest)
 		return
 	}
 
 	var partition int
 	var err error
 
-	if partStr != "" {
-		partition, err = strconv.Atoi(partStr)
-		if err != nil {
-			http.Error(w, "invalid partition", http.StatusBadRequest)
-			return
-		}
-	} else {
-		// Auto-assign partition using consistent hashing
-		partition = sp.assignPartition(topic, key)
+	partition, err = strconv.Atoi(partStr)
+	if err != nil {
+		http.Error(w, "invalid partition", http.StatusBadRequest)
+		return
 	}
 
 	// Get target broker using topic-partition combination

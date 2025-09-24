@@ -40,31 +40,6 @@
         }
     ],
     "paths": {
-        "/gpus": {
-            "get": {
-                "description": "Get the 10 most recent telemetry records",
-                "produces": ["application/json"],
-                "tags": ["legacy"],
-                "summary": "Get recent telemetry data (legacy)",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/TelemetryDataResponse"
-                            }
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/ErrorResponse"
-                        }
-                    }
-                }
-            }
-        },
         "/api/v1/gpus": {
             "get": {
                 "description": "Get a list of all available GPUs with their metadata",
@@ -153,66 +128,6 @@
                         "description": "Not Found",
                         "schema": {
                             "$ref": "#/definitions/ErrorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/ErrorResponse"
-                        }
-                    }
-                }
-            }
-        },
-        "/api/v1/hosts": {
-            "get": {
-                "description": "Get a list of all hosts with GPU count",
-                "produces": ["application/json"],
-                "tags": ["infrastructure"],
-                "summary": "List available hosts",
-                "security": [
-                    {
-                        "ApiKeyAuth": []
-                    },
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/HostListResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/ErrorResponse"
-                        }
-                    }
-                }
-            }
-        },
-        "/api/v1/namespaces": {
-            "get": {
-                "description": "Get a list of all Kubernetes namespaces with GPU count",
-                "produces": ["application/json"],
-                "tags": ["infrastructure"],
-                "summary": "List available namespaces",
-                "security": [
-                    {
-                        "ApiKeyAuth": []
-                    },
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/NamespaceListResponse"
                         }
                     },
                     "500": {

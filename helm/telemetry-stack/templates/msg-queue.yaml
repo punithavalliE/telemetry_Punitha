@@ -9,6 +9,9 @@ metadata:
     release: {{ .Release.Name }}
 spec:
   type: {{ .Values.msgQueue.service.type }}
+  {{- if .Values.msgQueue.useStatefulSet }}
+  clusterIP: None  # Headless service for StatefulSet
+  {{- end }}
   selector:
     app: {{ .Values.msgQueue.name }}
     release: {{ .Release.Name }}

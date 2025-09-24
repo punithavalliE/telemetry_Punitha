@@ -89,8 +89,8 @@ collector:
 msgQueue:
   enabled: true
   name: msg-queue
-  replicaCount: 1  # Scale to 2 replicas for load balancing
-  useStatefulSet: false  # Use StatefulSet for proper broker indexing
+  replicaCount: 2  # Scale to 2 replicas for load balancing
+  useStatefulSet: true  # Use StatefulSet for proper broker indexing
   image:
     repository: msg-queue
     tag: latest
@@ -107,7 +107,7 @@ msgQueue:
   env:
     port: "8080"
     brokerIndex: "0"      # Will be overridden by StatefulSet pod ordinal
-    brokerCount: "1"      # Should match replicaCount for proper partitioning
+    brokerCount: "2"      # Should match replicaCount for proper partitioning
     topics: "telemetry:4" # Example topics when multiple topics are needed partitions "events:8,orders:4,default:8"
   # Ingress configuration for advanced load balancing
   ingress:
@@ -143,7 +143,7 @@ msgQueueProxy:
   env:
     port: "8080"
     brokerService: "msg-queue"
-    brokerCount: "1"
+    brokerCount: "2"
     virtualNodes: "150"
     maxPartitions: "4"
     healthIntervalSeconds: "30"
@@ -179,7 +179,7 @@ streamer:
     port: 8080
   env:
     csvPath: "/data/dcgm_metrics_20250718_134233.csv"
-    csvDelayMs: "1000"
+    csvDelayMs: "1"
     useHttpQueue: "true"
     port: "8080"
     msgQueueAddr: "http://msg-queue-proxy-service:8080"

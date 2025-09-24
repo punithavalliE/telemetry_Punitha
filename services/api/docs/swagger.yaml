@@ -27,25 +27,6 @@ security:
 - ApiKeyAuth: []
 - BearerAuth: []
 paths:
-  /gpus:
-    get:
-      description: Get the 10 most recent telemetry records
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            items:
-              $ref: '#/definitions/TelemetryDataResponse'
-            type: array
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/ErrorResponse'
-      summary: Get recent telemetry data (legacy)
-      tags:
-      - legacy
   /api/v1/gpus:
     get:
       description: Get a list of all available GPUs with their metadata
@@ -109,40 +90,6 @@ paths:
       summary: Get GPU telemetry data
       tags:
       - telemetry
-  /api/v1/hosts:
-    get:
-      description: Get a list of all hosts with GPU count
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/HostListResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/ErrorResponse'
-      summary: List available hosts
-      tags:
-      - infrastructure
-  /api/v1/namespaces:
-    get:
-      description: Get a list of all Kubernetes namespaces with GPU count
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/NamespaceListResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/ErrorResponse'
-      summary: List available namespaces
-      tags:
-      - infrastructure
 swagger: "2.0"
 definitions:
   ErrorResponse:

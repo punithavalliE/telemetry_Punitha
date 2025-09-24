@@ -46,31 +46,7 @@ const docTemplate = `{
         }
     ],
     "paths": {
-        "/gpus": {
-            "get": {
-                "description": "Get the 10 most recent telemetry records",
-                "produces": ["application/json"],
-                "tags": ["legacy"],
-                "summary": "Get recent telemetry data (legacy)",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/TelemetryDataResponse"
-                            }
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/ErrorResponse"
-                        }
-                    }
-                }
-            }
-        },
+
         "/api/v1/gpus": {
             "get": {
                 "description": "Get a list of all available GPUs with their metadata",
@@ -153,50 +129,6 @@ const docTemplate = `{
                     }
                 }
             }
-        },
-        "/api/v1/hosts": {
-            "get": {
-                "description": "Get a list of all hosts with GPU count",
-                "produces": ["application/json"],
-                "tags": ["infrastructure"],
-                "summary": "List available hosts",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/HostListResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/ErrorResponse"
-                        }
-                    }
-                }
-            }
-        },
-        "/api/v1/namespaces": {
-            "get": {
-                "description": "Get a list of all Kubernetes namespaces with GPU count",
-                "produces": ["application/json"],
-                "tags": ["infrastructure"],
-                "summary": "List available namespaces",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/NamespaceListResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/ErrorResponse"
-                        }
-                    }
-                }
-            }
         }
     },
     "definitions": {
@@ -265,62 +197,6 @@ const docTemplate = `{
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/GPUInfo"
-                    }
-                }
-            }
-        },
-        "HostInfo": {
-            "type": "object",
-            "properties": {
-                "hostname": {
-                    "type": "string",
-                    "example": "mtv5-dgx1-hgpu-031"
-                },
-                "gpu_count": {
-                    "type": "integer",
-                    "example": 8
-                }
-            }
-        },
-        "HostListResponse": {
-            "type": "object",
-            "properties": {
-                "count": {
-                    "type": "integer",
-                    "example": 1
-                },
-                "hosts": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/HostInfo"
-                    }
-                }
-            }
-        },
-        "NamespaceInfo": {
-            "type": "object",
-            "properties": {
-                "namespace": {
-                    "type": "string",
-                    "example": "default"
-                },
-                "gpu_count": {
-                    "type": "integer",
-                    "example": 4
-                }
-            }
-        },
-        "NamespaceListResponse": {
-            "type": "object",
-            "properties": {
-                "count": {
-                    "type": "integer",
-                    "example": 2
-                },
-                "namespaces": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/NamespaceInfo"
                     }
                 }
             }
