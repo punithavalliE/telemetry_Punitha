@@ -21,6 +21,12 @@ spec:
       annotations:
         # Force pod restart on config changes
         checksum/config: {{ .Values.msgQueueProxy | toYaml | sha256sum }}
+        {{- if .Values.msgQueueProxy.monitoring.enabled }}
+        # Prometheus scraping annotations
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/metrics"
+        prometheus.io/port: {{ .Values.msgQueueProxy.service.port | quote }}
+        {{- end }}
     spec:
       containers:
       - name: {{ .Values.msgQueueProxy.name }}

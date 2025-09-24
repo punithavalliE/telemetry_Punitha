@@ -529,6 +529,107 @@ data:
           ],
           "title": "Database Operations",
           "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "vis": false
+                },
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              },
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 24
+          },
+          "id": 7,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "rate(http_requests_total{service=\"msg-queue-proxy-service\"}[5m])",
+              "interval": "",
+              "legendFormat": "{{ "{{" }}instance{{ "}}" }} - Requests/sec",
+              "refId": "A"
+            },
+            {
+              "expr": "service_health{service=\"msg-queue-proxy-service\"}",
+              "interval": "",
+              "legendFormat": "{{ "{{" }}instance{{ "}}" }} - Health Status",
+              "refId": "B"
+            },
+            {
+              "expr": "rate(proxy_requests_total{service=\"msg-queue-proxy-service\"}[5m])",
+              "interval": "",
+              "legendFormat": "{{ "{{" }}instance{{ "}}" }} - Proxy Requests/sec",
+              "refId": "C"
+            }
+          ],
+          "title": "Message Queue Proxy Metrics",
+          "type": "timeseries"
         }
       ],
       "refresh": "30s",

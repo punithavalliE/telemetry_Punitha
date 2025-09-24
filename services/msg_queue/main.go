@@ -89,10 +89,14 @@ func newPartition(topic string, index int, visTO time.Duration) (*Partition, err
 		ctx:     ctx,
 		cancel:  cancel,
 	}
-	// load persisted messages into queue on startup
-	if err := p.loadFromFile(); err != nil {
-		return nil, err
-	}
+	// load persisted messages into queue asynchronously to avoid blocking
+	go func() {
+		if err := p.loadFromFile(); err != nil {
+			log.Printf("partition %s-%d: failed to load from file: %v", topic, index, err)
+		} else {
+			log.Printf("partition %s-%d: successfully loaded messages from file", topic, index)
+		}
+	}()
 	// start monitor for timeouts
 	go p.monitorPending()
 	return p, nil

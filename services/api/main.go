@@ -82,32 +82,6 @@ func main() {
 	// Swagger endpoint (public for documentation)
 	mux.HandleFunc("/swagger/", httpSwagger.WrapHandler)
 
-	// @Summary Get recent telemetry data (legacy)
-	// @Description Get the 10 most recent telemetry records
-	// @Tags legacy
-	// @Produce json
-	// @Success 200 {array} TelemetryDataResponse
-	// @Failure 500 {object} ErrorResponse
-	// @Router /gpus [get]
-	mux.HandleFunc("/gpus", metrics.HTTPMiddleware("api-service", func(w http.ResponseWriter, r *http.Request) {
-		start := time.Now()
-		
-		records, err := influxClient.QueryRecentTelemetry(10)
-		if err != nil {
-			logger.Printf("Failed to query InfluxDB: %v", err)
-			metrics.RecordDatabaseOperation("api-service", "query", "error", time.Since(start))
-			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte("Failed to query data"))
-			return
-		}
-		
-		metrics.RecordDatabaseOperation("api-service", "query", "success", time.Since(start))
-		metrics.RecordTelemetryDataPoint("api-service", "gpu_data")
-		
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(records)
-	}))
-
 	// @Summary Get GPU telemetry data
 	// @Description Get telemetry data for a specific GPU with optional time range filtering
 	// @Tags telemetry
@@ -227,121 +201,12 @@ func main() {
 		json.NewEncoder(w).Encode(response)
 	})
 
-	// @Summary List available hosts
-	// @Description Get a list of all hosts with GPU count
-	// @Tags infrastructure
-	// @Produce json
-	// @Security ApiKeyAuth
-	// @Success 200 {object} HostListResponse
-	// @Failure 500 {object} ErrorResponse
-	// @Router /api/v1/hosts [get]
-	// New endpoint: GET /api/v1/hosts - List available hosts
-	mux.HandleFunc("/api/v1/hosts", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
-
-		records, err := influxClient.QueryRecentTelemetry(1000)
-		if err != nil {
-			logger.Printf("Failed to query InfluxDB for host list: %v", err)
-			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte("Failed to query host list"))
-			return
-		}
-
-		// Extract unique hostnames with GPU count
-		hostMap := make(map[string]map[string]bool)
-		for _, record := range records {
-			if record.Hostname != "" {
-				if hostMap[record.Hostname] == nil {
-					hostMap[record.Hostname] = make(map[string]bool)
-				}
-				if record.DeviceID != "" {
-					hostMap[record.Hostname][record.DeviceID] = true
-				}
-			}
-		}
-
-		var hostInfo []map[string]interface{}
-		for hostname, gpus := range hostMap {
-			info := map[string]interface{}{
-				"hostname":  hostname,
-				"gpu_count": len(gpus),
-			}
-			hostInfo = append(hostInfo, info)
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		response := map[string]interface{}{
-			"count": len(hostInfo),
-			"hosts": hostInfo,
-		}
-		json.NewEncoder(w).Encode(response)
-	})
-
-	// @Summary List available namespaces
-	// @Description Get a list of all Kubernetes namespaces with GPU count
-	// @Tags infrastructure
-	// @Produce json
-	// @Security ApiKeyAuth
-	// @Success 200 {object} NamespaceListResponse
-	// @Failure 500 {object} ErrorResponse
-	// @Router /api/v1/namespaces [get]
-	// New endpoint: GET /api/v1/namespaces - List available namespaces
-	mux.HandleFunc("/api/v1/namespaces", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
-
-		records, err := influxClient.QueryRecentTelemetry(1000)
-		if err != nil {
-			logger.Printf("Failed to query InfluxDB for namespace list: %v", err)
-			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte("Failed to query namespace list"))
-			return
-		}
-
-		// Extract unique namespaces with GPU count
-		namespaceMap := make(map[string]map[string]bool)
-		for _, record := range records {
-			if record.Namespace != "" {
-				if namespaceMap[record.Namespace] == nil {
-					namespaceMap[record.Namespace] = make(map[string]bool)
-				}
-				if record.DeviceID != "" {
-					namespaceMap[record.Namespace][record.DeviceID] = true
-				}
-			}
-		}
-
-		var namespaceInfo []map[string]interface{}
-		for namespace, gpus := range namespaceMap {
-			info := map[string]interface{}{
-				"namespace": namespace,
-				"gpu_count": len(gpus),
-			}
-			namespaceInfo = append(namespaceInfo, info)
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		response := map[string]interface{}{
-			"count":      len(namespaceInfo),
-			"namespaces": namespaceInfo,
-		}
-		json.NewEncoder(w).Encode(response)
-	})
-
 	logger.Println("API service started on :8080")
 	logger.Println("Available endpoints:")
 	logger.Println("  GET /health                            - Health check (no auth)")
 	logger.Println("  GET /swagger/                          - Swagger UI documentation (no auth)")
-	logger.Println("  GET /gpus                              - Recent telemetry [API KEY REQUIRED]")
 	logger.Println("  GET /api/v1/gpus                       - List available GPUs [API KEY REQUIRED]")
 	logger.Println("  GET /api/v1/gpus/{id}/telemetry        - GPU telemetry [API KEY REQUIRED]")
-	logger.Println("  GET /api/v1/hosts                      - List available hosts [API KEY REQUIRED]")
-	logger.Println("  GET /api/v1/namespaces                 - List available namespaces [API KEY REQUIRED]")
 	logger.Println("")
 	logger.Println("Authentication: Include 'X-API-Key: <your-secret>' header or 'Authorization: Bearer <your-secret>'")
 

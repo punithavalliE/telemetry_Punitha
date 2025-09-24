@@ -17,15 +17,16 @@ import (
 
 // HTTPMessageQueue implements a client for the msg_queue service
 type HTTPMessageQueue struct {
-	baseURL      string
-	client       *http.Client
-	topic        string
-	group        string
-	name         string
-	
-	// Round-robin partition assignment
-	maxPartitions int
-	counter       uint64
+	baseURL string
+	client  *http.Client
+	topic   string
+	group   string
+	name    string
+
+	// Round-robin partition assignment - separate counters for publish/subscribe
+	maxPartitions    int
+	publishCounter   uint64
+	subscribeCounter uint64
 }
 
 // Message represents a message from the queue
@@ -48,31 +49,39 @@ func NewHTTPMessageQueue(baseURL, topic, group, name string) (*HTTPMessageQueue,
 	}
 
 	return &HTTPMessageQueue{
-		baseURL:       baseURL,
-		client:        &http.Client{Timeout: 30 * time.Second},
-		topic:         topic,
-		group:         group,
-		name:          name,
-		maxPartitions: maxPartitions,
-		counter:       0,
+		baseURL:          baseURL,
+		client:           &http.Client{Timeout: 60 * time.Second},
+		topic:            topic,
+		group:            group,
+		name:             name,
+		maxPartitions:    maxPartitions,
+		publishCounter:   0,
+		subscribeCounter: 0,
 	}, nil
 }
 
-// calculatePartition returns the next partition in round-robin fashion
-func (h *HTTPMessageQueue) calculatePartition(topic string) int {
+// calculatePublishPartition returns the next partition for publishing in round-robin fashion
+func (h *HTTPMessageQueue) calculatePublishPartition(topic string) int {
 	// Atomic increment for thread safety
-	current := atomic.AddUint64(&h.counter, 1)
+	current := atomic.AddUint64(&h.publishCounter, 1)
+	return int((current - 1) % uint64(h.maxPartitions))
+}
+
+// calculateSubscribePartition returns the next partition for subscribing in round-robin fashion
+func (h *HTTPMessageQueue) calculateSubscribePartition(topic string) int {
+	// Atomic increment for thread safety
+	current := atomic.AddUint64(&h.subscribeCounter, 1)
 	return int((current - 1) % uint64(h.maxPartitions))
 }
 
 // Publish sends a message to the queue
 func (h *HTTPMessageQueue) Publish(topic string, payload []byte) error {
-	// Calculate partition using topic as key (client-side partition assignment)
-	partition := h.calculatePartition(topic)
-	
+	// Calculate partition using separate publish counter (client-side partition assignment)
+	partition := h.calculatePublishPartition(topic)
+
 	// Log partition assignment for visibility
-	fmt.Printf("[%s] Publishing to topic=%s, partition=%d (round-robin assignment)\n", h.name, topic, partition)
-	
+	fmt.Printf("[%s] Publishing to topic=%s, partition=%d (publish round-robin assignment)\n", h.name, topic, partition)
+
 	// Send partition explicitly to proxy - no key needed
 	url := fmt.Sprintf("%s/produce?topic=%s&partition=%d", h.baseURL, topic, partition)
 
@@ -101,12 +110,12 @@ func (h *HTTPMessageQueue) Publish(topic string, payload []byte) error {
 
 // Subscribe starts consuming messages from the queue
 func (h *HTTPMessageQueue) Subscribe(handler func(string, []byte, string) error) error {
-	// Calculate partition using round-robin assignment like in Publish
-	partition := h.calculatePartition(h.topic)
+	// Calculate partition using separate subscribe counter
+	partition := h.calculateSubscribePartition(h.topic)
 	url := fmt.Sprintf("%s/consume?topic=%s&partition=%d&group=%s", h.baseURL, h.topic, partition, h.group)
-	
+
 	// Log which partition this consumer is using
-	fmt.Printf("[%s] Consumer subscribing to topic=%s, partition=%d (round-robin assignment)\n", h.name, h.topic, partition)
+	fmt.Printf("[%s] Consumer subscribing to topic=%s, partition=%d (subscribe round-robin assignment)\n", h.name, h.topic, partition)
 
 	// Create context for cancellation
 	ctx := context.Background()
