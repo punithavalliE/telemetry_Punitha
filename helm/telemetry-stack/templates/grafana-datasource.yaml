@@ -13,5 +13,6 @@ data:
       type: prometheus
       access: proxy
       url: http://{{ include "telemetry-stack.fullname" . }}-prometheus-service:9090
+      uid: prometheus
       isDefault: true
       editable: false
