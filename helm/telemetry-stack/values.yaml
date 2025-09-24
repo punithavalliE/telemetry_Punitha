@@ -41,7 +41,7 @@ influxdb:
   env:
     initMode: setup
     adminUser: admin
-    adminPassword: supersecretpassword
+    adminPassword: admin123
     org: telemetryorg
     bucket: telem_bucket
     adminToken: supersecrettoken
@@ -80,7 +80,7 @@ collector:
     influxdbToken: "supersecrettoken"
     influxdbOrg: "telemetryorg"
     influxdbBucket: "telem_bucket"
-    msgQueueAddr: "http://telemetry-telemetry-stack-msg-queue-proxy:8080"
+    msgQueueAddr: "http://msg-queue-proxy-service:8080"
     msgQueueTopic: "telemetry"
     msgQueueGroup: "telemetry_group"
     msgQueueConsumerName: "collector"
@@ -182,7 +182,7 @@ streamer:
     csvDelayMs: "1000"
     useHttpQueue: "true"
     port: "8080"
-    msgQueueAddr: "http://telemetry-telemetry-stack-msg-queue-proxy:8080"
+    msgQueueAddr: "http://msg-queue-proxy-service:8080"
     msgQueueTopic: "telemetry"
     msgQueueGroup: "telemetry_group"
     msgQueueProducerName: "streamer"
@@ -242,7 +242,7 @@ grafana:
     port: 3000
     # Set to NodePort for external access if needed
     # nodePort: 30300
-  adminPassword: grafana123
+  adminPassword: admin123
   persistence:
     enabled: true
     size: 1Gi
@@ -258,9 +258,9 @@ grafana:
   datasources:
     enabled: true
     prometheus:
-      url: http://telemetry-telemetry-stack-prometheus-service:9090
+      url: http://prometheus-service:9090
     influxdb:
       url: http://influxdb:8086
       database: telem_bucket
       user: admin
-      password: supersecretpassword
+      password: admin123

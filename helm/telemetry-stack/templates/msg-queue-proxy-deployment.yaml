@@ -2,7 +2,7 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "telemetry-stack.fullname" . }}-{{ .Values.msgQueueProxy.name }}
+  name: msg-queue-proxy
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "telemetry-stack.labels" . | nindent 4 }}

@@ -2,7 +2,7 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "telemetry-stack.fullname" . }}-prometheus
+  name: prometheus
   labels:
     app: prometheus
     {{- include "telemetry-stack.labels" . | nindent 4 }}
@@ -72,7 +72,7 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "telemetry-stack.fullname" . }}-prometheus-service
+  name: prometheus-service
   labels:
     app: prometheus
     {{- include "telemetry-stack.labels" . | nindent 4 }}
