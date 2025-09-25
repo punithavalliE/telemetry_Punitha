@@ -145,12 +145,18 @@ func (sp *SmartProxy) Start() error {
 func (sp *SmartProxy) discoverBrokers() error {
 	sp.brokerEndpoints = make([]string, 0, sp.config.BrokerCount)
 
+	// Get namespace from environment or use default
+	namespace := os.Getenv("NAMESPACE")
+	if namespace == "" {
+		namespace = "telemetry" // Default to telemetry namespace
+	}
+
 	// Use proper StatefulSet DNS resolution for individual pods
 	serviceName := strings.Split(sp.config.BrokerService, ".")[0]
 	headlessServiceName := serviceName + "-headless" // StatefulSet uses headless service
 	for i := 0; i < sp.config.BrokerCount; i++ {
 		// StatefulSet pods have predictable DNS names: <pod-name>.<headless-service>.<namespace>.svc.cluster.local
-		endpoint := fmt.Sprintf("http://%s-%d.%s.default.svc.cluster.local:8080", serviceName, i, headlessServiceName)
+		endpoint := fmt.Sprintf("http://%s-%d.%s.%s.svc.cluster.local:8080", serviceName, i, headlessServiceName, namespace)
 		sp.brokerEndpoints = append(sp.brokerEndpoints, endpoint)
 		sp.healthyBrokers[endpoint] = true // Assume healthy initially
 	}

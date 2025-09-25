@@ -87,60 +87,89 @@ deploy_telemetry() {
 
     # Deploy with Helm
     kubectl create namespace telemetry --dry-run=client -o yaml | kubectl apply -f - #>/dev/null
-    helm upgrade --install telemetry ./helm/telemetry-stack --namespace telemetry --wait --timeout 600s
+    helm upgrade --install telemetry-stack ./helm/telemetry-stack --namespace telemetry --wait --timeout 600s
+
+    echo ""
+    echo "🔄 Setting up port forwarding..."
+    echo ""
+    
+    # Start port forwarding in background for immediate access
+    echo "Starting port forwards..."
+    
+    # Kill any existing port forwards
+    pkill -f "kubectl port-forward" 2>/dev/null || true
+    sleep 2
+    
+    # Start key services port forwarding in background
+    nohup kubectl port-forward -n telemetry svc/grafana-service 3000:3000 > /dev/null 2>&1 &
+    nohup kubectl port-forward -n telemetry svc/prometheus-service 9090:9090 > /dev/null 2>&1 &
+    nohup kubectl port-forward -n telemetry svc/api-nodeport 8080:8080 > /dev/null 2>&1 &
+    nohup kubectl port-forward -n telemetry svc/influxdb 8086:8086 > /dev/null 2>&1 &
+    
+    # Wait a moment for port forwards to establish
+    sleep 3
 
     echo ""
     echo "✅ Deployment Complete!"
     echo ""
-    echo "🌐 Port-Forwarding Commands for Service Access"
-    echo "=============================================="
+    echo "🌐 ACTIVE PORT FORWARDS & SERVICE ACCESS"
+    echo "========================================"
+    echo ""
+    echo "🎉 The following services are now accessible:"
     echo ""
     echo "📊 MONITORING & OBSERVABILITY:"
+    echo "   ✅ Grafana Dashboard: http://localhost:3000 (admin/admin123)"
+    echo "   ✅ Prometheus Metrics: http://localhost:9090"
+    echo "   ✅ InfluxDB: http://localhost:8086 (admin/admin123)"
+    echo "   ✅ Telemetry API: http://localhost:8080/swagger/ (API Key: telemetry-api-secret-2025)"
+    echo ""
+    echo "🔄 Additional Port-Forwarding Commands:"
     echo "   Grafana Dashboard:"
-    echo "   kubectl port-forward svc/grafana-service 3000:3000"
+    echo "   kubectl port-forward -n telemetry svc/grafana-service 3000:3000"
     echo "   → http://localhost:3000 (admin/admin123)"
     echo ""
     echo "   Prometheus Metrics:"
-    echo "   kubectl port-forward svc/prometheus-service 9090:9090"
+    echo "   kubectl port-forward -n telemetry svc/prometheus-service 9090:9090"
     echo "   → http://localhost:9090"
     echo ""
     echo "💾 DATABASE:"
     echo "   InfluxDB:"
-    echo "   kubectl port-forward svc/influxdb 8086:8086"
+    echo "   kubectl port-forward -n telemetry svc/influxdb 8086:8086"
     echo "   → http://localhost:8086 (admin/admin123)"
     echo ""
     echo "🔌 API SERVICES:"
     echo "   Telemetry API:"
-    echo "   kubectl port-forward svc/api-nodeport 8080:8080"
+    echo "   kubectl port-forward -n telemetry svc/api-nodeport 8080:8080"
     echo "   → http://localhost:8080/swagger/ (API Key: telemetry-api-secret-2025)"
     echo ""
     echo "   Streamer Service:"
-    echo "   kubectl port-forward svc/streamer-service 8081:8080"
+    echo "   kubectl port-forward -n telemetry svc/streamer-service 8081:8080"
     echo "   → http://localhost:8081/health"
     echo ""
     echo "   Collector Service:"
-    echo "   kubectl port-forward svc/collector-service 8082:8080"
+    echo "   kubectl port-forward -n telemetry svc/collector-service 8082:8080"
     echo "   → http://localhost:8082/health"
     echo ""
     echo "⚙️  MESSAGE QUEUE:"
     echo "   Message Queue Proxy:"
-    echo "   kubectl port-forward svc/msg-queue-proxy-service 8083:8080"
+    echo "   kubectl port-forward -n telemetry svc/msg-queue-proxy-service 8083:8080"
     echo "   → http://localhost:8083/health"
     echo ""
     echo "   Message Queue Broker:"
-    echo "   kubectl port-forward svc/msg-queue 8084:8080"
+    echo "   kubectl port-forward -n telemetry svc/msg-queue 8084:8080"
     echo "   → http://localhost:8084/topics"
     echo ""
-    echo "🚀 QUICK START:"
-    echo "   1. Forward Grafana: kubectl port-forward svc/grafana-service 3000:3000"
-    echo "   2. Open: http://localhost:3000 (admin/admin123)"
-    echo "   3. Forward API: kubectl port-forward svc/api-service 8080:8080"
+    echo "🚀 QUICK START (Services Already Running):"
+    echo "   1. Open Grafana: http://localhost:3000 (admin/admin123)"
+    echo "   2. Open Prometheus: http://localhost:9090"
+    echo "   3. Open API Docs: http://localhost:8080/swagger/"
     echo "   4. Test API: curl -H \"X-API-Key: telemetry-api-secret-2025\" http://localhost:8080/health"
     echo ""
     echo "📝 USEFUL COMMANDS:"
-    echo "   Check pod status: kubectl get pods"
-    echo "   View service logs: kubectl logs -f deployment/<service-name>"
-    echo "   Scale services: kubectl scale deployment <service-name> --replicas=<count>"
+    echo "   Check pod status: kubectl get pods -n telemetry"
+    echo "   View service logs: kubectl logs -f deployment/<service-name> -n telemetry"
+    echo "   Scale services: kubectl scale deployment <service-name> --replicas=<count> -n telemetry"
+    echo "   Stop port forwards: pkill -f 'kubectl port-forward'"
     echo ""
     echo "🔍 METRICS ENDPOINTS (after port-forwarding):"
     echo "   API metrics: http://localhost:8080/metrics"

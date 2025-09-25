@@ -1,7 +1,7 @@
 # PowerShell test runner script for the telemetry system
 param(
     [Parameter(Position=0)]
-    [ValidateSet("all", "api", "collector", "msg_queue", "streamer", "coverage", "race", "bench", "lint", "clean", "help")]
+    [ValidateSet("all", "api", "collector", "msg_queue", "msg_queue_proxy", "streamer", "services", "coverage", "race", "bench", "lint", "clean", "verbose", "quick", "comprehensive", "help")]
     [string]$Option = "all"
 )
 
@@ -32,6 +32,12 @@ function Run-ServiceTests {
     
     Write-Status "Running tests for $Service service..."
     
+    # Check if comprehensive test file exists
+    $comprehensiveTestFiles = Get-ChildItem -Path "./services/$Service" -Name "*_comprehensive_test.go" -ErrorAction SilentlyContinue
+    if ($comprehensiveTestFiles) {
+        Write-Status "Found comprehensive test suite for $Service"
+    }
+    
     $result = & go test -v ./services/$Service
     if ($LASTEXITCODE -eq 0) {
         Write-Success "$Service tests passed"
@@ -46,12 +52,50 @@ function Run-ServiceTests {
 function Run-AllTests {
     Write-Status "Running all tests..."
     
-    $result = & go test -v ./...
+    # List of all services
+    $services = @("api", "collector", "msg_queue", "msg_queue_proxy", "streamer")
+    $failedServices = @()
+    $totalTests = 0
+    $passedTests = 0
+    
+    Write-Status "Running comprehensive test suite for all 5 services..."
+    
+    # Run tests for each service individually to get detailed output
+    foreach ($service in $services) {
+        Write-Status "Testing $service service..."
+        $testResult = Run-ServiceTests $service
+        if ($testResult) {
+            Write-Success "✓ $service service tests passed"
+            $passedTests++
+        } else {
+            Write-Error "✗ $service service tests failed"
+            $failedServices += $service
+        }
+        Write-Host ""
+    }
+    
+    # Run internal package tests
+    Write-Status "Testing internal packages..."
+    & go test -v ./internal/...
     if ($LASTEXITCODE -eq 0) {
-        Write-Success "All tests passed"
+        Write-Success "✓ Internal package tests passed"
+    } else {
+        Write-Error "✗ Internal package tests failed"
+        $failedServices += "internal"
+    }
+    
+    # Summary
+    Write-Host ""
+    Write-Status "=== TEST SUMMARY ==="
+    Write-Status "Services tested: $($services.Count)"
+    Write-Status "Services passed: $passedTests"
+    Write-Status "Services failed: $($failedServices.Count)"
+    
+    if ($failedServices.Count -eq 0) {
+        Write-Success "🎉 All tests passed successfully!"
         return $true
     } else {
-        Write-Error "Some tests failed"
+        Write-Error "❌ Failed services: $($failedServices -join ', ')"
         return $false
     }
 }
@@ -156,6 +200,48 @@ function Clear-TestArtifacts {
     Write-Success "Test artifacts cleaned"
 }
 
+# Function to run comprehensive tests specifically
+function Run-ComprehensiveTests {
+    Write-Status "Running comprehensive test suites..."
+    
+    $services = @("api", "collector", "msg_queue", "msg_queue_proxy", "streamer")
+    $failedServices = @()
+    $testFilesFound = 0
+    
+    foreach ($service in $services) {
+        $testFiles = Get-ChildItem -Path "./services/$service" -Name "*_comprehensive_test.go" -ErrorAction SilentlyContinue
+        
+        if ($testFiles) {
+            $testFilesFound++
+            Write-Status "Running comprehensive tests for $service..."
+            
+            & go test -v ./services/$service
+            if ($LASTEXITCODE -eq 0) {
+                Write-Success "✓ $service comprehensive tests passed"
+            } else {
+                Write-Error "✗ $service comprehensive tests failed"
+                $failedServices += $service
+            }
+        } else {
+            Write-Warning "No comprehensive test file found for $service"
+        }
+    }
+    
+    Write-Host ""
+    Write-Status "=== COMPREHENSIVE TEST SUMMARY ==="
+    Write-Status "Test files found: $testFilesFound/5"
+    Write-Status "Services passed: $(5 - $failedServices.Count)"
+    Write-Status "Services failed: $($failedServices.Count)"
+    
+    if ($failedServices.Count -eq 0) {
+        Write-Success "🎉 All comprehensive tests passed!"
+        return $true
+    } else {
+        Write-Error "❌ Failed services: $($failedServices -join ', ')"
+        return $false
+    }
+}
+
 # Function to run linter
 function Invoke-Lint {
     Write-Status "Running linter..."
@@ -183,23 +269,32 @@ function Show-Usage {
     Write-Host "Run tests for the telemetry system"
     Write-Host ""
     Write-Host "Options:"
-    Write-Host "  all         Run all tests (default)"
-    Write-Host "  api         Run API service tests only"
-    Write-Host "  collector   Run collector service tests only"
-    Write-Host "  msg_queue   Run message queue service tests only"
-    Write-Host "  streamer    Run streamer service tests only"
-    Write-Host "  coverage    Run tests with coverage report"
-    Write-Host "  race        Run tests with race detection"
-    Write-Host "  bench       Run benchmarks"
-    Write-Host "  lint        Run linter"
-    Write-Host "  clean       Clean test artifacts"
-    Write-Host "  help        Show this help message"
+    Write-Host "  all             Run all tests (default)"
+    Write-Host "  api             Run API service tests only"
+    Write-Host "  collector       Run collector service tests only"
+    Write-Host "  msg_queue       Run message queue service tests only"
+    Write-Host "  msg_queue_proxy Run message queue proxy service tests only"
+    Write-Host "  streamer        Run streamer service tests only"
+    Write-Host "  services        Run all service tests (no internal packages)"
+    Write-Host "  coverage        Run tests with coverage report"
+    Write-Host "  race            Run tests with race detection"
+    Write-Host "  bench           Run benchmarks"
+    Write-Host "  lint            Run linter"
+    Write-Host "  clean           Clean test artifacts"
+    Write-Host "  verbose         Run all tests with extra verbose output"
+    Write-Host "  quick           Run basic tests without race detection"
+    Write-Host "  comprehensive   Run comprehensive test suites only"
+    Write-Host "  help            Show this help message"
     Write-Host ""
     Write-Host "Examples:"
-    Write-Host "  .\run_tests.ps1              # Run all tests"
-    Write-Host "  .\run_tests.ps1 coverage     # Run tests with coverage"
-    Write-Host "  .\run_tests.ps1 api          # Run only API tests"
-    Write-Host "  .\run_tests.ps1 race         # Run tests with race detection"
+    Write-Host "  .\run_tests.ps1                    # Run all tests"
+    Write-Host "  .\run_tests.ps1 coverage           # Run tests with coverage"
+    Write-Host "  .\run_tests.ps1 api                # Run only API tests"
+    Write-Host "  .\run_tests.ps1 msg_queue_proxy    # Run only message queue proxy tests"
+    Write-Host "  .\run_tests.ps1 comprehensive      # Run comprehensive test suites"
+    Write-Host "  .\run_tests.ps1 services           # Run all service tests only"
+    Write-Host "  .\run_tests.ps1 race               # Run tests with race detection"
+    Write-Host "  .\run_tests.ps1 verbose            # Run with extra verbose output"
 }
 
 # Main script logic
@@ -224,9 +319,25 @@ function Main {
             $result = Run-ServiceTests "msg_queue"
             $exitCode = if ($result) { 0 } else { 1 }
         }
+        "msg_queue_proxy" {
+            $result = Run-ServiceTests "msg_queue_proxy"
+            $exitCode = if ($result) { 0 } else { 1 }
+        }
         "streamer" {
             $result = Run-ServiceTests "streamer"
             $exitCode = if ($result) { 0 } else { 1 }
+        }
+        "services" {
+            Write-Status "Running all service tests..."
+            $services = @("api", "collector", "msg_queue", "msg_queue_proxy", "streamer")
+            $failed = $false
+            foreach ($service in $services) {
+                $serviceResult = Run-ServiceTests $service
+                if (-not $serviceResult) {
+                    $failed = $true
+                }
+            }
+            $exitCode = if ($failed) { 1 } else { 0 }
         }
         "coverage" {
             $result = Run-CoverageTests
@@ -247,6 +358,20 @@ function Main {
         "clean" {
             Clear-TestArtifacts
             $exitCode = 0
+        }
+        "verbose" {
+            Write-Status "Running verbose test suite..."
+            & go test -v -count=1 ./services/...
+            $exitCode = $LASTEXITCODE
+        }
+        "quick" {
+            Write-Status "Running quick test suite..."
+            & go test ./services/...
+            $exitCode = $LASTEXITCODE
+        }
+        "comprehensive" {
+            $result = Run-ComprehensiveTests
+            $exitCode = if ($result) { 0 } else { 1 }
         }
         "all" {
             Write-Status "Starting comprehensive test suite..."

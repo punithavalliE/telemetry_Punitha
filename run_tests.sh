@@ -34,6 +34,11 @@ run_service_tests() {
     local service=$1
     print_status "Running tests for $service service..."
     
+    # Check if comprehensive test file exists
+    if [ -f "./services/$service/${service}_comprehensive_test.go" ] || [ -f "./services/$service/*_comprehensive_test.go" ] 2>/dev/null; then
+        print_status "Found comprehensive test suite for $service"
+    fi
+    
     if go test -v ./services/$service; then
         print_success "$service tests passed"
         return 0
@@ -43,15 +48,95 @@ run_service_tests() {
     fi
 }
 
+# Function to run comprehensive tests specifically
+run_comprehensive_tests() {
+    print_status "Running comprehensive test suites..."
+    
+    local services=("api" "collector" "msg_queue" "msg_queue_proxy" "streamer")
+    local failed_services=()
+    local test_files_found=0
+    
+    for service in "${services[@]}"; do
+        local test_file_pattern="./services/$service/*_comprehensive_test.go"
+        
+        # Check if comprehensive test file exists
+        if ls $test_file_pattern 1> /dev/null 2>&1; then
+            test_files_found=$((test_files_found + 1))
+            print_status "Running comprehensive tests for $service..."
+            
+            if go test -v -run "Test.*" ./services/$service/*_comprehensive_test.go ./services/$service/*.go 2>/dev/null || \
+               go test -v ./services/$service; then
+                print_success "✓ $service comprehensive tests passed"
+            else
+                print_error "✗ $service comprehensive tests failed"
+                failed_services+=("$service")
+            fi
+        else
+            print_warning "No comprehensive test file found for $service"
+        fi
+    done
+    
+    echo ""
+    print_status "=== COMPREHENSIVE TEST SUMMARY ==="
+    print_status "Test files found: $test_files_found/5"
+    print_status "Services passed: $((5 - ${#failed_services[@]}))"
+    print_status "Services failed: ${#failed_services[@]}"
+    
+    if [ ${#failed_services[@]} -eq 0 ]; then
+        print_success "🎉 All comprehensive tests passed!"
+        return 0
+    else
+        print_error "❌ Failed services: ${failed_services[*]}"
+        return 1
+    fi
+}
+
 # Function to run all tests
 run_all_tests() {
     print_status "Running all tests..."
     
-    if go test -v ./...; then
-        print_success "All tests passed"
+    # List of all services
+    local services=("api" "collector" "msg_queue" "msg_queue_proxy" "streamer")
+    local failed_services=()
+    local total_tests=0
+    local passed_tests=0
+    
+    print_status "Running comprehensive test suite for all 5 services..."
+    
+    # Run tests for each service individually to get detailed output
+    for service in "${services[@]}"; do
+        print_status "Testing $service service..."
+        if go test -v ./services/$service 2>&1 | tee /tmp/${service}_test.log; then
+            print_success "✓ $service service tests passed"
+            passed_tests=$((passed_tests + 1))
+        else
+            print_error "✗ $service service tests failed"
+            failed_services+=("$service")
+        fi
+        echo ""
+    done
+    
+    # Run internal package tests
+    print_status "Testing internal packages..."
+    if go test -v ./internal/...; then
+        print_success "✓ Internal package tests passed"
+    else
+        print_error "✗ Internal package tests failed"
+        failed_services+=("internal")
+    fi
+    
+    # Summary
+    echo ""
+    print_status "=== TEST SUMMARY ==="
+    print_status "Services tested: ${#services[@]}"
+    print_status "Services passed: $passed_tests"
+    print_status "Services failed: ${#failed_services[@]}"
+    
+    if [ ${#failed_services[@]} -eq 0 ]; then
+        print_success "🎉 All tests passed successfully!"
         return 0
     else
-        print_error "Some tests failed"
+        print_error "❌ Failed services: ${failed_services[*]}"
         return 1
     fi
 }
@@ -175,23 +260,32 @@ show_usage() {
     echo "Run tests for the telemetry system"
     echo ""
     echo "Options:"
-    echo "  all         Run all tests (default)"
-    echo "  api         Run API service tests only"
-    echo "  collector   Run collector service tests only"
-    echo "  msg_queue   Run message queue service tests only"
-    echo "  streamer    Run streamer service tests only"
-    echo "  coverage    Run tests with coverage report"
-    echo "  race        Run tests with race detection"
-    echo "  bench       Run benchmarks"
-    echo "  lint        Run linter"
-    echo "  clean       Clean test artifacts"
-    echo "  help        Show this help message"
+    echo "  all             Run all tests (default)"
+    echo "  api             Run API service tests only"
+    echo "  collector       Run collector service tests only"
+    echo "  msg_queue       Run message queue service tests only"
+    echo "  msg_queue_proxy Run message queue proxy service tests only"
+    echo "  streamer        Run streamer service tests only"
+    echo "  services        Run all service tests (no internal packages)"
+    echo "  coverage        Run tests with coverage report"
+    echo "  race            Run tests with race detection"
+    echo "  bench           Run benchmarks"
+    echo "  lint            Run linter"
+    echo "  clean           Clean test artifacts"
+    echo "  verbose         Run all tests with extra verbose output"
+    echo "  quick           Run basic tests without race detection"
+    echo "  comprehensive   Run comprehensive test suites only"
+    echo "  help            Show this help message"
     echo ""
     echo "Examples:"
-    echo "  $0              # Run all tests"
-    echo "  $0 coverage     # Run tests with coverage"
-    echo "  $0 api          # Run only API tests"
-    echo "  $0 race         # Run tests with race detection"
+    echo "  $0                    # Run all tests"
+    echo "  $0 coverage           # Run tests with coverage"
+    echo "  $0 api                # Run only API tests"
+    echo "  $0 msg_queue_proxy    # Run only message queue proxy tests"
+    echo "  $0 comprehensive      # Run comprehensive test suites"
+    echo "  $0 services           # Run all service tests only"
+    echo "  $0 race               # Run tests with race detection"
+    echo "  $0 verbose            # Run with extra verbose output"
 }
 
 # Main script logic
@@ -217,9 +311,24 @@ main() {
             run_service_tests "msg_queue"
             exit_code=$?
             ;;
+        "msg_queue_proxy")
+            run_service_tests "msg_queue_proxy"
+            exit_code=$?
+            ;;
         "streamer")
             run_service_tests "streamer"
             exit_code=$?
+            ;;
+        "services")
+            print_status "Running all service tests..."
+            local services=("api" "collector" "msg_queue" "msg_queue_proxy" "streamer")
+            local failed=0
+            for service in "${services[@]}"; do
+                if ! run_service_tests "$service"; then
+                    failed=1
+                fi
+            done
+            exit_code=$failed
             ;;
         "coverage")
             run_coverage_tests
@@ -239,6 +348,20 @@ main() {
             ;;
         "clean")
             clean_artifacts
+            exit_code=$?
+            ;;
+        "verbose")
+            print_status "Running verbose test suite..."
+            go test -v -count=1 ./services/...
+            exit_code=$?
+            ;;
+        "quick")
+            print_status "Running quick test suite..."
+            go test ./services/...
+            exit_code=$?
+            ;;
+        "comprehensive")
+            run_comprehensive_tests
             exit_code=$?
             ;;
         "all")

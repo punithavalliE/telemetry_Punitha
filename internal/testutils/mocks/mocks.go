@@ -4,12 +4,12 @@ import (
 	"time"
 	"fmt"
 
-	"github.com/example/telemetry/internal/influx"
+	"github.com/influxdata/influxdb-client-go/v2/api/write"
 )
 
 // MockInfluxWriter is a mock implementation of InfluxDB writer for testing
 type MockInfluxWriter struct {
-	points     []influx.Point
+	points     []*write.Point
 	queryData  []interface{}
 	err        error
 	closed     bool
@@ -19,7 +19,7 @@ type MockInfluxWriter struct {
 // NewMockInfluxWriter creates a new mock InfluxDB writer
 func NewMockInfluxWriter() *MockInfluxWriter {
 	return &MockInfluxWriter{
-		points:    make([]influx.Point, 0),
+		points:    make([]*write.Point, 0),
 		queryData: make([]interface{}, 0),
 	}
 }
@@ -40,7 +40,7 @@ func (m *MockInfluxWriter) SetWriteDelay(delay time.Duration) {
 }
 
 // WritePoints implements the InfluxWriter interface
-func (m *MockInfluxWriter) WritePoints(points []influx.Point) error {
+func (m *MockInfluxWriter) WritePoints(points []*write.Point) error {
 	if m.writeDelay > 0 {
 		time.Sleep(m.writeDelay)
 	}
@@ -90,7 +90,7 @@ func (m *MockInfluxWriter) QueryTelemetryByGPUID(gpuID string, startTime, endTim
 }
 
 // GetWrittenPoints returns the points that were written (for testing)
-func (m *MockInfluxWriter) GetWrittenPoints() []influx.Point {
+func (m *MockInfluxWriter) GetWrittenPoints() []*write.Point {
 	return m.points
 }
 
@@ -101,7 +101,7 @@ func (m *MockInfluxWriter) GetWriteCount() int {
 
 // Reset clears all data and resets the mock
 func (m *MockInfluxWriter) Reset() {
-	m.points = make([]influx.Point, 0)
+	m.points = make([]*write.Point, 0)
 	m.queryData = make([]interface{}, 0)
 	m.err = nil
 	m.closed = false

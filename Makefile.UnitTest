@@ -4,6 +4,14 @@
 PKG            := ./...
 COVERAGE_FILE  := coverage.out
 COVERAGE_HTML  := coverage.html
+COVERAGE_DIR   := coverage_report
+
+# Service directories
+API_DIR        := services/api
+COLLECTOR_DIR  := services/collector
+MSG_QUEUE_DIR  := services/msg_queue
+MSG_QUEUE_PROXY_DIR := services/msg_queue_proxy
+STREAMER_DIR   := services/streamer
 
 # ---------------------------------------------------------
 # Default target: show help if no target is given
@@ -27,14 +35,108 @@ html: coverage
 	go tool cover -html=$(COVERAGE_FILE) -o $(COVERAGE_HTML)
 	@echo "HTML report generated: $(COVERAGE_HTML)"
 
+## Run unit tests for all 5 services
+test-unit: test-unit-api test-unit-collector test-unit-msg-queue test-unit-msg-queue-proxy test-unit-streamer
+
+## Run unit tests for API service
+test-unit-api:
+	@echo "🧪 Running unit tests for API service..."
+	cd $(API_DIR) && go test -v -run "Test" -coverprofile=api_coverage.out .
+	@if [ -f "$(API_DIR)/api_coverage.out" ]; then \
+		cd $(API_DIR) && go tool cover -func=api_coverage.out | tail -1; \
+	fi
+
+## Run unit tests for Collector service
+test-unit-collector:
+	@echo "🧪 Running unit tests for Collector service..."
+	cd $(COLLECTOR_DIR) && go test -v -run "Test" -coverprofile=collector_coverage.out .
+	@if [ -f "$(COLLECTOR_DIR)/collector_coverage.out" ]; then \
+		cd $(COLLECTOR_DIR) && go tool cover -func=collector_coverage.out | tail -1; \
+	fi
+
+## Run unit tests for Message Queue service
+test-unit-msg-queue:
+	@echo "🧪 Running unit tests for Message Queue service..."
+	cd $(MSG_QUEUE_DIR) && go test -v -run "Test" -coverprofile=msg_queue_coverage.out .
+	@if [ -f "$(MSG_QUEUE_DIR)/msg_queue_coverage.out" ]; then \
+		cd $(MSG_QUEUE_DIR) && go tool cover -func=msg_queue_coverage.out | tail -1; \
+	fi
+
+## Run unit tests for Message Queue Proxy service
+test-unit-msg-queue-proxy:
+	@echo "🧪 Running unit tests for Message Queue Proxy service..."
+	cd $(MSG_QUEUE_PROXY_DIR) && go test -v -run "Test" -coverprofile=proxy_coverage.out .
+	@if [ -f "$(MSG_QUEUE_PROXY_DIR)/proxy_coverage.out" ]; then \
+		cd $(MSG_QUEUE_PROXY_DIR) && go tool cover -func=proxy_coverage.out | tail -1; \
+	fi
+
+## Run unit tests for Streamer service
+test-unit-streamer:
+	@echo "🧪 Running unit tests for Streamer service..."
+	cd $(STREAMER_DIR) && go test -timeout 30s -v -run "Test" -coverprofile=streamer_coverage.out .
+	@if [ -f "$(STREAMER_DIR)/streamer_coverage.out" ]; then \
+		cd $(STREAMER_DIR) && go tool cover -func=streamer_coverage.out | tail -1; \
+	fi
+
+## Run unit tests for all 5 services with combined coverage report
+test-unit-coverage:
+	@echo "🧪 Running unit tests for all 5 services with coverage..."
+	@mkdir -p $(COVERAGE_DIR)
+	@echo "Running API service tests..."
+	@cd $(API_DIR) && go test -v -run "Test" -coverprofile=../$(COVERAGE_DIR)/api_coverage.out . || true
+	@echo "Running Collector service tests..."
+	@cd $(COLLECTOR_DIR) && go test -v -run "Test" -coverprofile=../$(COVERAGE_DIR)/collector_coverage.out . || true
+	@echo "Running Message Queue service tests..."
+	@cd $(MSG_QUEUE_DIR) && go test -v -run "Test" -coverprofile=../$(COVERAGE_DIR)/msg_queue_coverage.out . || true
+	@echo "Running Message Queue Proxy service tests..."
+	@cd $(MSG_QUEUE_PROXY_DIR) && go test -v -run "Test" -coverprofile=../$(COVERAGE_DIR)/proxy_coverage.out . || true
+	@echo "Running Streamer service tests..."
+	@cd $(STREAMER_DIR) && go test -timeout 30s -v -run "Test" -coverprofile=../$(COVERAGE_DIR)/streamer_coverage.out . || true
+	@echo "📊 Generating combined coverage report..."
+	@echo "mode: set" > $(COVERAGE_DIR)/combined_coverage.out
+	@for file in $(COVERAGE_DIR)/*_coverage.out; do \
+		if [ -f "$$file" ]; then \
+			tail -n +2 "$$file" >> $(COVERAGE_DIR)/combined_coverage.out; \
+		fi; \
+	done
+	@go tool cover -html=$(COVERAGE_DIR)/combined_coverage.out -o $(COVERAGE_DIR)/combined_coverage.html
+	@go tool cover -func=$(COVERAGE_DIR)/combined_coverage.out
+	@echo "✅ Combined coverage report generated: $(COVERAGE_DIR)/combined_coverage.html"
+
+## Quick unit test summary for all 5 services
+test-unit-summary:
+	@echo "🔍 Running quick unit test summary for all 5 services..."
+	@echo "=================================================="
+	@echo "API Service:"
+	@cd $(API_DIR) && go test -v -run "Test" . 2>&1 | grep -E "(PASS|FAIL|RUN)" | tail -5 || echo "❌ API tests failed"
+	@echo "=================================================="
+	@echo "Collector Service:"
+	@cd $(COLLECTOR_DIR) && go test -v -run "Test" . 2>&1 | grep -E "(PASS|FAIL|RUN)" | tail -5 || echo "❌ Collector tests failed"
+	@echo "=================================================="
+	@echo "Message Queue Service:"
+	@cd $(MSG_QUEUE_DIR) && go test -v -run "Test" . 2>&1 | grep -E "(PASS|FAIL|RUN)" | tail -5 || echo "❌ Message Queue tests failed"
+	@echo "=================================================="
+	@echo "Message Queue Proxy Service:"
+	@cd $(MSG_QUEUE_PROXY_DIR) && go test -v -run "Test" . 2>&1 | grep -E "(PASS|FAIL|RUN)" | tail -5 || echo "❌ Proxy tests failed"
+	@echo "=================================================="
+	@echo "Streamer Service:"
+	@cd $(STREAMER_DIR) && go test -timeout 30s -v -run "Test" . 2>&1 | grep -E "(PASS|FAIL|RUN)" | tail -5 || echo "❌ Streamer tests failed"
+	@echo "=================================================="
+
 ## Remove coverage artifacts
 clean:
 	rm -f $(COVERAGE_FILE) $(COVERAGE_HTML)
+	rm -rf $(COVERAGE_DIR)
+	rm -f $(API_DIR)/*_coverage.out
+	rm -f $(COLLECTOR_DIR)/*_coverage.out
+	rm -f $(MSG_QUEUE_DIR)/*_coverage.out
+	rm -f $(MSG_QUEUE_PROXY_DIR)/*_coverage.out
+	rm -f $(STREAMER_DIR)/*_coverage.out
 
 ## Show this help message
 help:
-	@echo "Usage: make <target>"
+	@echo "Usage: make -f Makefile.UnitTest <target>"
 	@echo
 	@echo "Targets:"
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | \
-	    awk 'BEGIN {FS = ":.*?## "}; {printf "  %-10s %s\n", $$1, $$2}'
+	    awk 'BEGIN {FS = ":.*?## "}; {printf "  %-25s %s\n", $$1, $$2}'
