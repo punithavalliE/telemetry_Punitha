@@ -19,10 +19,10 @@ func (ss *StreamerService) StreamCSV(filePath string, delay time.Duration) error
 	r := csv.NewReader(f)
 	recordCount := 0
 	ss.logger.Printf("Starting CSV streaming with %v delay between records", delay)
-	
+
 	// Skip the header row on first read
 	skipHeader := true
-	
+
 	//for i := 0; i < 10; i++ {
 	for {
 		rec, err := r.Read()
@@ -36,14 +36,14 @@ func (ss *StreamerService) StreamCSV(filePath string, delay time.Duration) error
 			}
 			return err
 		}
-		
+
 		// Skip header row
 		if skipHeader {
 			ss.logger.Printf("Skipping CSV header row: %v", rec)
 			skipHeader = false
 			continue
 		}
-		
+
 		if len(rec) < 12 {
 			ss.logger.Printf("Skipping incomplete record (only %d fields)", len(rec))
 			continue
@@ -55,20 +55,33 @@ func (ss *StreamerService) StreamCSV(filePath string, delay time.Duration) error
 			ss.logger.Printf("Failed to marshal record %d: %v", recordCount, err)
 			continue
 		}
-		
+
 		recordCount++
-		if err := ss.queue.Publish("telemetry", msgBody); err != nil {
-			ss.logger.Printf("Failed to publish record %d: %v", recordCount, err)
-			return err
+
+		// Retry publish with exponential backoff
+		maxRetries := 3
+		published := false
+		for attempt := 0; attempt < maxRetries && !published; attempt++ {
+			if err := ss.queue.Publish("telemetry", msgBody); err != nil {
+				if attempt == maxRetries-1 {
+					ss.logger.Printf("Failed to publish record %d after %d attempts: %v (skipping)", recordCount, maxRetries, err)
+				} else {
+					retryDelay := time.Duration(attempt+1) * time.Second
+					ss.logger.Printf("Failed to publish record %d (attempt %d/%d): %v (retrying in %v)", recordCount, attempt+1, maxRetries, err, retryDelay)
+					time.Sleep(retryDelay)
+				}
+			} else {
+				published = true
+			}
 		}
-		
+
 		// Log every 10th record to show activity without flooding logs
 		if recordCount%10 == 0 {
-			ss.logger.Printf("Published record %d: GPU ID=%s, Metric=%s, Timestamp=%s", 
+			ss.logger.Printf("Published record %d: GPU ID=%s, Metric=%s, Timestamp=%s",
 				recordCount, rec[2], rec[1], rec[0])
 		}
-		
+
 		time.Sleep(delay)
 	}
-	return nil
+	// Note: This function runs an infinite loop, so this return is never reached
 }

@@ -95,10 +95,22 @@ func (ss *StreamerService) publishTelemetryHandler(w http.ResponseWriter, r *htt
 	       return
        }
 
-       if err := ss.queue.Publish("telemetry", msgBody); err != nil {
-	       ss.logger.Printf("Failed to publish telemetry: %v", err)
-	       http.Error(w, "Failed to publish telemetry", http.StatusInternalServerError)
-	       return
+       // Retry publish with exponential backoff for HTTP requests
+       maxRetries := 2
+       published := false
+       for attempt := 0; attempt < maxRetries && !published; attempt++ {
+	       if err := ss.queue.Publish("telemetry", msgBody); err != nil {
+		       if attempt == maxRetries-1 {
+			       ss.logger.Printf("Failed to publish telemetry after %d attempts: %v", maxRetries, err)
+			       http.Error(w, "Failed to publish telemetry after retries", http.StatusServiceUnavailable)
+			       return
+		       } else {
+			       ss.logger.Printf("Failed to publish telemetry (attempt %d/%d): %v (retrying)", attempt+1, maxRetries, err)
+			       time.Sleep(time.Duration(attempt+1) * time.Second)
+		       }
+	       } else {
+		       published = true
+	       }
        }
 
        // Record successful message production
@@ -156,9 +168,10 @@ func (ps *StreamerService) Start() {
 	       }
 	       ps.logger.Printf("Streaming telemetry from CSV: %s", csvPath)
 	       if err := ps.StreamCSV(csvPath, delay); err != nil {
-		       ps.logger.Fatalf("CSV streaming failed: %v", err)
+		       ps.logger.Printf("CSV streaming failed: %v (service continues running)", err)
+	       } else {
+		       ps.logger.Println("CSV streaming complete. HTTP server continues running...")
 	       }
-	       ps.logger.Println("CSV streaming complete. HTTP server continues running...")
        }
 
 	// Keep the main goroutine alive for HTTP server

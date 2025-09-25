@@ -82,7 +82,7 @@ func newPartition(topic string, index int, visTO time.Duration) (*Partition, err
 	p := &Partition{
 		topic:   topic,
 		index:   index,
-		queue:   make(chan Message, 5000),
+		queue:   make(chan Message, 2000),
 		pending: make(map[string]pending),
 		file:    f,
 		visTO:   visTO,
@@ -139,9 +139,10 @@ func (p *Partition) loadFromFile() error {
 		// push into queue (non-blocking)
 		select {
 		case p.queue <- m:
+			// Successfully loaded message
 		default:
-			// if queue full, push synchronously to avoid losing
-			p.queue <- m
+			// Queue is full, skip this persisted message
+			log.Printf("partition %s-%d: skipping persisted message %s - queue full", p.topic, p.index, m.ID)
 		}
 	}
 	// seek to end for future appends
@@ -151,12 +152,20 @@ func (p *Partition) loadFromFile() error {
 
 func (p *Partition) enqueue(m Message) error {
 	// persist then push to queue
-	/*if err := p.persist(m); err != nil {
+	if err := p.persist(m); err != nil {
 		return err
-	}*/
+	}
 	log.Printf("partition %s-%d: queue size before enqueue: %d", p.topic, p.index, len(p.queue))
-	p.queue <- m
-	return nil
+
+	// Non-blocking enqueue to prevent HTTP handler from hanging
+	select {
+	case p.queue <- m:
+		return nil
+	default:
+		// Queue is full - return error instead of blocking
+		log.Printf("partition %s-%d: queue full (%d messages), rejecting message %s", p.topic, p.index, len(p.queue), m.ID)
+		return fmt.Errorf("queue full (%d messages)", len(p.queue))
+	}
 }
 
 func (p *Partition) monitorPending() {
@@ -179,9 +188,11 @@ func (p *Partition) monitorPending() {
 					log.Printf("partition %s-%d: queue size before requeue: %d", p.topic, p.index, len(p.queue))
 					select {
 					case p.queue <- pd.msg:
+						// Successfully requeued
+						delete(p.pending, id)
 					default:
-						// if queue full, push asynchronously (blocking) to ensure requeue
-						p.queue <- pd.msg
+						// Queue is full, cannot requeue - message will be lost
+						log.Printf("partition %s-%d: cannot requeue message %s - queue full, message lost", p.topic, p.index, id)
 					}
 				}
 			}
