@@ -32,18 +32,18 @@ cleanup_helm() {
     echo "📦 Cleaning up Helm releases..."
     
     # Check if telemetry release exists
-    if helm list | grep -q "telemetry"; then
+    if helm list -n telemetry | grep -q "telemetry"; then
         echo "   Uninstalling telemetry Helm release..."
-        helm uninstall telemetry || true
+        helm uninstall telemetry -n telemetry || true
         echo "   ✅ Helm release uninstalled"
     else
         echo "   No telemetry Helm release found"
     fi
     
     # Check if telemetry-stack release exists (alternative name)
-    if helm list | grep -q "telemetry-stack"; then
+    if helm list -n telemetry | grep -q "telemetry-stack"; then
         echo "   Uninstalling telemetry-stack Helm release..."
-        helm uninstall telemetry-stack || true
+        helm uninstall telemetry-stack -n telemetry || true
         echo "   ✅ Helm release uninstalled"
     fi
 }
@@ -53,22 +53,22 @@ cleanup_kubernetes() {
     echo "☸️  Cleaning up Kubernetes resources..."
     
     # Delete persistent volume claims
-    if kubectl get pvc | grep -q "telemetry\|msg-queue\|influxdb\|grafana\|prometheus"; then
+    if kubectl get pvc -n telemetry | grep -q "telemetry\|msg-queue\|influxdb\|grafana\|prometheus"; then
         echo "   Deleting persistent volume claims..."
-        kubectl delete pvc --all --timeout=60s || true
+        kubectl delete pvc --all -n telemetry --timeout=60s || true
     fi
     
     # Delete any remaining pods
-    if kubectl get pods | grep -q "telemetry\|msg-queue\|influxdb\|grafana\|prometheus\|api\|collector\|streamer"; then
+    if kubectl get pods -n telemetry | grep -q "telemetry\|msg-queue\|influxdb\|grafana\|prometheus\|api\|collector\|streamer"; then
         echo "   Force deleting remaining pods..."
-        kubectl delete pods --all --grace-period=0 --force || true
+        kubectl delete pods --all -n telemetry --grace-period=0 --force || true
     fi
     
     # Delete configmaps and secrets
     echo "   Cleaning up ConfigMaps and Secrets..."
-    kubectl delete configmap --all || true
-    kubectl delete secret --all || true
-    
+    kubectl delete configmap --all -n telemetry || true
+    kubectl delete secret --all -n telemetry || true
+
     echo "   ✅ Kubernetes cleanup complete"
 }
 
