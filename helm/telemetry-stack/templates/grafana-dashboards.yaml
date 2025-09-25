@@ -610,19 +610,19 @@ data:
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "rate(http_requests_total{service=\"msg-queue-proxy-service\"}[5m])",
+              "expr": "rate(http_requests_total{service=\"msg-queue-proxy\"}[5m])",
               "interval": "",
               "legendFormat": "{{ "{{" }}instance{{ "}}" }} - Requests/sec",
               "refId": "A"
             },
             {
-              "expr": "service_health{service=\"msg-queue-proxy-service\"}",
+              "expr": "service_health{service=\"msg-queue-proxy\"}",
               "interval": "",
               "legendFormat": "{{ "{{" }}instance{{ "}}" }} - Health Status",
               "refId": "B"
             },
             {
-              "expr": "rate(proxy_requests_total{service=\"msg-queue-proxy-service\"}[5m])",
+              "expr": "rate(proxy_requests_total{service=\"msg-queue-proxy\"}[5m])",
               "interval": "",
               "legendFormat": "{{ "{{" }}instance{{ "}}" }} - Proxy Requests/sec",
               "refId": "C"

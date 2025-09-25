@@ -121,6 +121,7 @@ msgQueue:
     brokerIndex: "0"      # Will be overridden by StatefulSet pod ordinal
     brokerCount: "2"      # Should match replicaCount for proper partitioning
     topics: "telemetry:2" # Fixed to match actual partition count
+    queueSize: "5000"     # Queue buffer size per partition (configurable)
   # Health check configuration
   healthCheck:
     path: "/health"

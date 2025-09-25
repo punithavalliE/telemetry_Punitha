@@ -8,12 +8,10 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/example/telemetry/internal/shared"
-	"github.com/example/telemetry/internal/telemetry"
-	"github.com/example/telemetry/internal/metrics"
 	"github.com/example/telemetry/config"
+	"github.com/example/telemetry/internal/metrics"
+	"github.com/example/telemetry/internal/shared"
 )
-
 
 type StreamerService struct {
 	queue  shared.MessageQueue
@@ -22,104 +20,57 @@ type StreamerService struct {
 }
 
 func NewStreamerService() *StreamerService {
-       logger := log.New(os.Stdout, "[streamer-service] ", log.LstdFlags)
-       
-       // Initialize Prometheus metrics
-       metrics.InitMetrics("streamer-service")
-       logger.Println("Prometheus metrics initialized")
-       
-       cfg := config.Load()
+	logger := log.New(os.Stdout, "[streamer-service] ", log.LstdFlags)
 
-       // Check if we should use HTTP message queue or Redis
-       var queue shared.MessageQueue
-       var err error
-       
-       if cfg.UseHTTPQueue {
-	       // Use HTTP message queue
-	       queue, err = shared.NewHTTPMessageQueue(cfg.MsgQueueAddr, cfg.MsgQueueTopic, cfg.MsgQueueGroup, cfg.MsgQueueProducerName)
-	       if err != nil {
-		       logger.Fatalf("Failed to create HTTP message queue: %v", err)
-	       }
-	       logger.Printf("Using HTTP message queue at %s, topic=%s, group=%s, name=%s", cfg.MsgQueueAddr, cfg.MsgQueueTopic, cfg.MsgQueueGroup, cfg.MsgQueueProducerName)
-       } else {
-	       // Use Redis (existing behavior)
-	       redisAddr := os.Getenv("REDIS_ADDR")
-	       if redisAddr == "" {
-		       redisAddr = "redis:6379"
-	       }
-	       stream := os.Getenv("REDIS_STREAM")
-	       if stream == "" {
-		       stream = "telemetry"
-	       }
-	       group := os.Getenv("REDIS_GROUP")
-	       if group == "" {
-		       group = "telemetry_group"
-	       }
-	       name := os.Getenv("REDIS_PRODUCER_NAME")
-	       if name == "" {
-		       name = "streamer"
-	       }
+	// Initialize Prometheus metrics
+	metrics.InitMetrics("streamer-service")
+	logger.Println("Prometheus metrics initialized")
 
-	       queue, err = shared.NewRedisStreamQueue(redisAddr, stream, group, name)
-	       if err != nil {
-		       logger.Fatalf("Failed to create Redis stream queue: %v", err)
-	       }
+	cfg := config.Load()
 
-	       logger.Printf("Using Redis stream queue at %s, stream=%s, group=%s, name=%s", redisAddr, stream, group, name)
-       }
+	// Check if we should use HTTP message queue or Redis
+	var queue shared.MessageQueue
+	var err error
 
-       return &StreamerService{
-	       queue:  queue,
-	       logger: logger,
-	       config: cfg,
-       }
-}
+	if cfg.UseHTTPQueue {
+		// Use HTTP message queue
+		queue, err = shared.NewHTTPMessageQueue(cfg.MsgQueueAddr, cfg.MsgQueueTopic, cfg.MsgQueueGroup, cfg.MsgQueueProducerName)
+		if err != nil {
+			logger.Fatalf("Failed to create HTTP message queue: %v", err)
+		}
+		logger.Printf("Using HTTP message queue at %s, topic=%s, group=%s, name=%s", cfg.MsgQueueAddr, cfg.MsgQueueTopic, cfg.MsgQueueGroup, cfg.MsgQueueProducerName)
+	} else {
+		// Use Redis (For testing purposes - initial trial version)
+		redisAddr := os.Getenv("REDIS_ADDR")
+		if redisAddr == "" {
+			redisAddr = "redis:6379"
+		}
+		stream := os.Getenv("REDIS_STREAM")
+		if stream == "" {
+			stream = "telemetry"
+		}
+		group := os.Getenv("REDIS_GROUP")
+		if group == "" {
+			group = "telemetry_group"
+		}
+		name := os.Getenv("REDIS_PRODUCER_NAME")
+		if name == "" {
+			name = "streamer"
+		}
 
-func (ss *StreamerService) publishTelemetryHandler(w http.ResponseWriter, r *http.Request) {
-       if r.Method != http.MethodPost {
-	       http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-	       return
-       }
+		queue, err = shared.NewRedisStreamQueue(redisAddr, stream, group, name)
+		if err != nil {
+			logger.Fatalf("Failed to create Redis stream queue: %v", err)
+		}
 
-       var data telemetry.TelemetryRecord
-       if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
-	       ss.logger.Printf("Invalid JSON: %v", err)
-	       http.Error(w, "Invalid JSON", http.StatusBadRequest)
-	       return
-       }
+		logger.Printf("Using Redis stream queue at %s, stream=%s, group=%s, name=%s", redisAddr, stream, group, name)
+	}
 
-       msgBody, err := json.Marshal(data)
-       if err != nil {
-	       ss.logger.Printf("Failed to marshal telemetry: %v", err)
-	       http.Error(w, "Failed to process telemetry", http.StatusInternalServerError)
-	       return
-       }
-
-       // Retry publish with exponential backoff for HTTP requests
-       maxRetries := 2
-       published := false
-       for attempt := 0; attempt < maxRetries && !published; attempt++ {
-	       if err := ss.queue.Publish("telemetry", msgBody); err != nil {
-		       if attempt == maxRetries-1 {
-			       ss.logger.Printf("Failed to publish telemetry after %d attempts: %v", maxRetries, err)
-			       http.Error(w, "Failed to publish telemetry after retries", http.StatusServiceUnavailable)
-			       return
-		       } else {
-			       ss.logger.Printf("Failed to publish telemetry (attempt %d/%d): %v (retrying)", attempt+1, maxRetries, err)
-			       time.Sleep(time.Duration(attempt+1) * time.Second)
-		       }
-	       } else {
-		       published = true
-	       }
-       }
-
-       // Record successful message production
-       metrics.RecordMessageProduced("streamer-service", "telemetry")
-       metrics.RecordTelemetryDataPoint("streamer-service", "published_message")
-       
-       ss.logger.Printf("Published telemetry: %+v", data)
-       w.Header().Set("Content-Type", "application/json")
-       json.NewEncoder(w).Encode(map[string]string{"status": "published"})
+	return &StreamerService{
+		queue:  queue,
+		logger: logger,
+		config: cfg,
+	}
 }
 
 func (ps *StreamerService) healthHandler(w http.ResponseWriter, r *http.Request) {
@@ -127,12 +78,9 @@ func (ps *StreamerService) healthHandler(w http.ResponseWriter, r *http.Request)
 	json.NewEncoder(w).Encode(map[string]string{"status": "healthy"})
 }
 
-
-
 func (ps *StreamerService) Start() {
-	http.HandleFunc("/telemetry", metrics.HTTPMiddleware("streamer-service", ps.publishTelemetryHandler))
 	http.HandleFunc("/health", metrics.HTTPMiddleware("streamer-service", ps.healthHandler))
-	
+
 	// Add Prometheus metrics endpoint
 	http.Handle("/metrics", metrics.MetricsHandler())
 
@@ -156,23 +104,23 @@ func (ps *StreamerService) Start() {
 
 	// Give server time to start
 	time.Sleep(1 * time.Second)
-	
-       // If CSV_PATH env var is set, stream from CSV but keep server running
-       csvPath := os.Getenv("CSV_PATH")
-       if csvPath != "" {
-	       delay := 1 * time.Second
-	       if d := os.Getenv("CSV_DELAY_MS"); d != "" {
-		       if ms, err := strconv.Atoi(d); err == nil {
-			       delay = time.Duration(ms) * time.Millisecond
-		       }
-	       }
-	       ps.logger.Printf("Streaming telemetry from CSV: %s", csvPath)
-	       if err := ps.StreamCSV(csvPath, delay); err != nil {
-		       ps.logger.Printf("CSV streaming failed: %v (service continues running)", err)
-	       } else {
-		       ps.logger.Println("CSV streaming complete. HTTP server continues running...")
-	       }
-       }
+
+	// If CSV_PATH env var is set, stream from CSV but keep server running
+	csvPath := os.Getenv("CSV_PATH")
+	if csvPath != "" {
+		delay := 1 * time.Second
+		if d := os.Getenv("CSV_DELAY_MS"); d != "" {
+			if ms, err := strconv.Atoi(d); err == nil {
+				delay = time.Duration(ms) * time.Millisecond
+			}
+		}
+		ps.logger.Printf("Streaming telemetry from CSV: %s", csvPath)
+		if err := ps.StreamCSV(csvPath, delay); err != nil {
+			ps.logger.Printf("CSV streaming failed: %v (service continues running)", err)
+		} else {
+			ps.logger.Println("CSV streaming complete. HTTP server continues running...")
+		}
+	}
 
 	// Keep the main goroutine alive for HTTP server
 	select {}
@@ -183,7 +131,7 @@ func (ss *StreamerService) Close() {
 }
 
 func main() {
-       service := NewStreamerService()
-       defer service.Close()
-       service.Start()
+	service := NewStreamerService()
+	defer service.Close()
+	service.Start()
 }

@@ -1,0 +1,235 @@
+# Swagger Documentation Makefile
+# Dedicated makefile for managing Swagger documentation generation and validation
+# Usage: make -f Makefile.swagger <target>
+
+# Configuration
+API_DIR := services/api
+DOCS_DIR := $(API_DIR)/docs
+MAIN_FILE := $(API_DIR)/main.go
+SWAG_VERSION := latest
+
+# Colors for output
+GREEN := \033[32m
+YELLOW := \033[33m
+RED := \033[31m
+BLUE := \033[34m
+RESET := \033[0m
+
+# Default target
+.DEFAULT_GOAL := help
+
+# Check if swag tool is installed
+.PHONY: check-swag
+check-swag:
+	@printf "$(BLUE)🔍 Checking for swag tool...$(RESET)\n"
+	@which swag > /dev/null 2>&1 || { \
+		printf "$(YELLOW)⚠️  swag tool not found. Installing...$(RESET)\n"; \
+		go install github.com/swaggo/swag/cmd/swag@$(SWAG_VERSION); \
+		printf "$(GREEN)✅ swag tool installed successfully!$(RESET)\n"; \
+	}
+	@printf "$(GREEN)✅ swag tool is available$(RESET)\n"
+
+# Install or update swag tool
+.PHONY: install-swag
+install-swag:
+	@printf "$(BLUE)📦 Installing/updating swag tool...$(RESET)\n"
+	go install github.com/swaggo/swag/cmd/swag@$(SWAG_VERSION)
+	@printf "$(GREEN)✅ swag tool installed/updated successfully!$(RESET)\n"
+
+# Generate Swagger documentation
+.PHONY: generate
+generate: check-swag
+	@printf "$(BLUE)📚 Generating Swagger documentation...$(RESET)\n"
+	@printf "$(YELLOW)   Source: $(MAIN_FILE)$(RESET)\n"
+	@printf "$(YELLOW)   Output: $(DOCS_DIR)$(RESET)\n"
+	swag init \
+		-g $(MAIN_FILE) \
+		-o $(DOCS_DIR) \
+		--parseDependency \
+		--parseInternal \
+		--parseDepth 1
+	@printf "$(GREEN)✅ Swagger documentation generated successfully!$(RESET)\n"
+	@printf "$(BLUE)📁 Generated files:$(RESET)\n"
+	@printf "   • $(DOCS_DIR)/docs.go\n"
+	@printf "   • $(DOCS_DIR)/swagger.json\n"
+	@printf "   • $(DOCS_DIR)/swagger.yaml\n"
+
+# Generate with verbose output
+.PHONY: generate-verbose
+generate-verbose: check-swag
+	@printf "$(BLUE)📚 Generating Swagger documentation (verbose)...$(RESET)\n"
+	swag init \
+		-g $(MAIN_FILE) \
+		-o $(DOCS_DIR) \
+		--parseDependency \
+		--parseInternal \
+		--parseDepth 1 \
+		--verbose
+	@printf "$(GREEN)✅ Swagger documentation generated with verbose output!$(RESET)\n"
+
+# Validate Swagger documentation
+.PHONY: validate
+validate:
+	@printf "$(BLUE)🔍 Validating Swagger documentation...$(RESET)\n"
+	@if [ ! -f "$(DOCS_DIR)/swagger.json" ]; then \
+		printf "$(RED)❌ swagger.json not found in $(DOCS_DIR)$(RESET)\n"; \
+		printf "$(YELLOW)💡 Run 'make -f Makefile.swagger generate' first$(RESET)\n"; \
+		exit 1; \
+	fi
+	@if [ ! -f "$(DOCS_DIR)/swagger.yaml" ]; then \
+		printf "$(RED)❌ swagger.yaml not found in $(DOCS_DIR)$(RESET)\n"; \
+		printf "$(YELLOW)💡 Run 'make -f Makefile.swagger generate' first$(RESET)\n"; \
+		exit 1; \
+	fi
+	@if [ ! -f "$(DOCS_DIR)/docs.go" ]; then \
+		printf "$(RED)❌ docs.go not found in $(DOCS_DIR)$(RESET)\n"; \
+		printf "$(YELLOW)💡 Run 'make -f Makefile.swagger generate' first$(RESET)\n"; \
+		exit 1; \
+	fi
+	@printf "$(GREEN)✅ All Swagger documentation files are present and valid!$(RESET)\n"
+
+# Format Swagger annotations in source code
+.PHONY: format
+format: check-swag
+	@printf "$(BLUE)📝 Formatting Swagger annotations...$(RESET)\n"
+	swag fmt -g $(MAIN_FILE)
+	@printf "$(GREEN)✅ Swagger annotations formatted successfully!$(RESET)\n"
+
+# Clean generated Swagger files
+.PHONY: clean
+clean:
+	@printf "$(BLUE)🧹 Cleaning Swagger documentation...$(RESET)\n"
+	@if [ -f "$(DOCS_DIR)/docs.go" ]; then \
+		rm -f $(DOCS_DIR)/docs.go; \
+		printf "$(YELLOW)   Removed: $(DOCS_DIR)/docs.go$(RESET)\n"; \
+	fi
+	@if [ -f "$(DOCS_DIR)/swagger.json" ]; then \
+		rm -f $(DOCS_DIR)/swagger.json; \
+		printf "$(YELLOW)   Removed: $(DOCS_DIR)/swagger.json$(RESET)\n"; \
+	fi
+	@if [ -f "$(DOCS_DIR)/swagger.yaml" ]; then \
+		rm -f $(DOCS_DIR)/swagger.yaml; \
+		printf "$(YELLOW)   Removed: $(DOCS_DIR)/swagger.yaml$(RESET)\n"; \
+	fi
+	@printf "$(GREEN)✅ Swagger documentation cleaned!$(RESET)\n"
+
+# Show information about Swagger setup
+.PHONY: info
+info:
+	@printf "$(BLUE)📋 Swagger Documentation Information$(RESET)\n"
+	@printf "$(BLUE)=====================================$(RESET)\n"
+	@printf "API Directory:     $(API_DIR)\n"
+	@printf "Docs Directory:    $(DOCS_DIR)\n"
+	@printf "Main File:         $(MAIN_FILE)\n"
+	@printf "Swag Version:      $(SWAG_VERSION)\n"
+	@printf "\n"
+	@printf "$(BLUE)📁 File Status:$(RESET)\n"
+	@if [ -f "$(DOCS_DIR)/docs.go" ]; then \
+		printf "$(GREEN)✅ docs.go exists$(RESET)\n"; \
+	else \
+		printf "$(RED)❌ docs.go missing$(RESET)\n"; \
+	fi
+	@if [ -f "$(DOCS_DIR)/swagger.json" ]; then \
+		printf "$(GREEN)✅ swagger.json exists$(RESET)\n"; \
+	else \
+		printf "$(RED)❌ swagger.json missing$(RESET)\n"; \
+	fi
+	@if [ -f "$(DOCS_DIR)/swagger.yaml" ]; then \
+		printf "$(GREEN)✅ swagger.yaml exists$(RESET)\n"; \
+	else \
+		printf "$(RED)❌ swagger.yaml missing$(RESET)\n"; \
+	fi
+	@printf "\n"
+	@printf "$(BLUE)🔧 Tool Status:$(RESET)\n"
+	@if which swag > /dev/null 2>&1; then \
+		printf "$(GREEN)✅ swag tool is installed$(RESET)\n"; \
+		printf "   Version: $$(swag --version 2>/dev/null || echo 'unknown')\n"; \
+	else \
+		printf "$(RED)❌ swag tool not installed$(RESET)\n"; \
+	fi
+
+# Serve documentation info (show how to access Swagger UI)
+.PHONY: serve-info
+serve-info:
+	@printf "$(BLUE)🌐 Swagger Documentation Access$(RESET)\n"
+	@printf "$(BLUE)==============================$(RESET)\n"
+	@printf "The Swagger UI is available when the API server is running:\n"
+	@printf "\n"
+	@printf "$(GREEN)🚀 Local Development:$(RESET)\n"
+	@printf "   1. Build and run API: make build-api && ./bin/api\n"
+	@printf "   2. Open: http://localhost:8080/swagger/\n"
+	@printf "\n"
+	@printf "$(GREEN)🐳 Kubernetes Deployment:$(RESET)\n"
+	@printf "   1. Port-forward: kubectl port-forward svc/api-service 8080:8080\n"
+	@printf "   2. Open: http://localhost:8080/swagger/\n"
+	@printf "\n"
+	@printf "$(GREEN)🔑 Authentication:$(RESET)\n"
+	@printf "   API Key: telemetry-api-secret-2025\n"
+	@printf "   Header: X-API-Key\n"
+
+# Regenerate documentation (clean + generate)
+.PHONY: regenerate
+regenerate: clean generate
+	@printf "$(GREEN)🔄 Swagger documentation regenerated successfully!$(RESET)\n"
+
+# Watch for changes and regenerate (requires inotify-tools or fswatch)
+.PHONY: watch
+watch: check-swag
+	@printf "$(BLUE)👀 Watching for changes in $(API_DIR)...$(RESET)\n"
+	@printf "$(YELLOW)Press Ctrl+C to stop$(RESET)\n"
+	@if which fswatch > /dev/null 2>&1; then \
+		fswatch -o $(API_DIR) | while read f; do \
+			printf "$(YELLOW)🔄 Changes detected, regenerating...$(RESET)\n"; \
+			make -f Makefile.swagger generate; \
+		done; \
+	elif which inotifywait > /dev/null 2>&1; then \
+		while inotifywait -r -e modify,create,delete $(API_DIR); do \
+			printf "$(YELLOW)🔄 Changes detected, regenerating...$(RESET)\n"; \
+			make -f Makefile.swagger generate; \
+		done; \
+	else \
+		printf "$(RED)❌ Watch requires fswatch (macOS) or inotify-tools (Linux)$(RESET)\n"; \
+		printf "$(YELLOW)Install with:$(RESET)\n"; \
+		printf "   macOS: brew install fswatch\n"; \
+		printf "   Linux: sudo apt-get install inotify-tools\n"; \
+		exit 1; \
+	fi
+
+# Show help
+.PHONY: help
+help:
+	@printf "$(BLUE)📚 Swagger Documentation Makefile$(RESET)\n"
+	@printf "$(BLUE)===================================$(RESET)\n"
+	@printf "Usage: make -f Makefile.swagger <target>\n"
+	@printf "\n"
+	@printf "$(GREEN)🎯 Main Targets:$(RESET)\n"
+	@printf "  generate         Generate Swagger documentation\n"
+	@printf "  generate-verbose Generate with verbose output\n"
+	@printf "  validate         Validate existing documentation\n"
+	@printf "  format           Format Swagger annotations in code\n"
+	@printf "  clean            Remove generated documentation files\n"
+	@printf "  regenerate       Clean and regenerate documentation\n"
+	@printf "\n"
+	@printf "$(GREEN)🔧 Tool Management:$(RESET)\n"
+	@printf "  check-swag       Check if swag tool is installed\n"
+	@printf "  install-swag     Install/update swag tool\n"
+	@printf "\n"
+	@printf "$(GREEN)📋 Information:$(RESET)\n"
+	@printf "  info             Show Swagger setup information\n"
+	@printf "  serve-info       Show how to access Swagger UI\n"
+	@printf "  help             Show this help message\n"
+	@printf "\n"
+	@printf "$(GREEN)⚡ Advanced:$(RESET)\n"
+	@printf "  watch            Watch for changes and auto-regenerate\n"
+	@printf "\n"
+	@printf "$(YELLOW)💡 Examples:$(RESET)\n"
+	@printf "  make -f Makefile.swagger generate\n"
+	@printf "  make -f Makefile.swagger validate\n"
+	@printf "  make -f Makefile.swagger clean regenerate\n"
+	@printf "  make -f Makefile.swagger info\n"
+
+# Development workflow (install tool, generate docs, validate)
+.PHONY: dev-setup
+dev-setup: install-swag generate validate
+	@printf "$(GREEN)🎉 Development setup complete!$(RESET)\n"
+	@printf "$(BLUE)Run 'make -f Makefile.swagger serve-info' for access instructions$(RESET)\n"

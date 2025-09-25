@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"os"
 	"time"
+
+	"github.com/example/telemetry/internal/metrics"
 )
 
 // StreamCSV reads telemetry data from a CSV file and publishes the entire CSV record to the queue.
@@ -73,6 +75,12 @@ func (ss *StreamerService) StreamCSV(filePath string, delay time.Duration) error
 			} else {
 				published = true
 			}
+		}
+
+		// Record metrics only if message was successfully published
+		if published {
+			metrics.RecordMessageProduced("streamer-service", "telemetry")
+			metrics.RecordTelemetryDataPoint("streamer-service", "csv_record")
 		}
 
 		// Log every 10th record to show activity without flooding logs

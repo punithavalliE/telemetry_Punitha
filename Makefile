@@ -123,11 +123,60 @@ clean:
 	rm -rf $(BINARY_DIR)
 	rm -f coverage.out coverage.html
 
+# Swagger documentation targets
+.PHONY: swagger swagger-init swagger-validate swagger-serve swagger-clean swagger-check
+
+# Install swag tool if not present
+swagger-check:
+	@which swag > /dev/null || (echo "Installing swag..." && go install github.com/swaggo/swag/cmd/swag@latest)
+
 # Generate Swagger docs
-.PHONY: swagger
-swagger:
+swagger: swagger-check
 	@echo "Generating Swagger documentation..."
-	swag init -g $(API_DIR)/main.go -o $(API_DIR)/docs
+	swag init -g $(API_DIR)/main.go -o $(API_DIR)/docs --parseDependency --parseInternal
+	@echo "✅ Swagger documentation generated successfully!"
+	@echo "📁 Documentation files:"
+	@echo "   - $(API_DIR)/docs/docs.go"
+	@echo "   - $(API_DIR)/docs/swagger.json"
+	@echo "   - $(API_DIR)/docs/swagger.yaml"
+
+# Initialize Swagger docs (alias for swagger)
+swagger-init: swagger
+
+# Validate Swagger documentation
+swagger-validate: swagger-check
+	@echo "Validating Swagger documentation..."
+	@if [ -f "$(API_DIR)/docs/swagger.json" ]; then \
+		echo "✅ swagger.json exists and is valid"; \
+	else \
+		echo "❌ swagger.json not found. Run 'make swagger' first"; \
+		exit 1; \
+	fi
+	@echo "✅ Swagger documentation is valid!"
+
+# Serve Swagger docs locally (requires API server to be running)
+swagger-serve:
+	@echo "🌐 Swagger documentation is available at:"
+	@echo "   http://localhost:8080/swagger/"
+	@echo ""
+	@echo "💡 Make sure the API server is running:"
+	@echo "   make run-api"
+	@echo "   OR"
+	@echo "   kubectl port-forward svc/api-service 8080:8080"
+
+# Clean Swagger generated files
+swagger-clean:
+	@echo "🧹 Cleaning Swagger documentation..."
+	@rm -f $(API_DIR)/docs/docs.go
+	@rm -f $(API_DIR)/docs/swagger.json
+	@rm -f $(API_DIR)/docs/swagger.yaml
+	@echo "✅ Swagger documentation cleaned!"
+
+# Format and update Swagger annotations
+swagger-fmt: swagger-check
+	@echo "📝 Formatting Swagger annotations..."
+	swag fmt -g $(API_DIR)/main.go
+	@echo "✅ Swagger annotations formatted!"
 
 # Docker builds
 .PHONY: docker-build
@@ -199,6 +248,12 @@ help:
 	@echo "  clean         - Clean up binaries and artifacts"
 	@echo "  deps          - Download and verify dependencies"
 	@echo "  swagger       - Generate Swagger documentation"
+	@echo "  swagger-init  - Initialize Swagger docs (alias for swagger)"
+	@echo "  swagger-validate - Validate existing Swagger documentation"
+	@echo "  swagger-serve - Show Swagger documentation URL"
+	@echo "  swagger-clean - Clean generated Swagger files"
+	@echo "  swagger-fmt   - Format Swagger annotations in code"
+	@echo "  swagger-check - Check/install swag tool"
 	@echo "  docker-build  - Build Docker images"
 	@echo "  run-*         - Run individual services"
 	@echo "  fmt           - Format code"

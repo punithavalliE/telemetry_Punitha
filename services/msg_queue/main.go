@@ -35,7 +35,20 @@ import (
 const (
 	defaultVisibilityTimeout = 30 * time.Second
 	storageDir               = "./data"
+	defaultQueueSize         = 1000
 )
+
+// getQueueSize returns the queue size from environment variable or default value
+func getQueueSize() int {
+	if sizeStr := os.Getenv("QUEUE_SIZE"); sizeStr != "" {
+		if size, err := strconv.Atoi(sizeStr); err == nil && size > defaultQueueSize {
+			log.Printf("Using queue size from environment: %d", size)
+			return size
+		}
+		log.Printf("Invalid QUEUE_SIZE value '%s', using default: %d", sizeStr, defaultQueueSize)
+	}
+	return defaultQueueSize
+}
 
 // Message is the unit of transfer.
 type Message struct {
@@ -79,10 +92,11 @@ func newPartition(topic string, index int, visTO time.Duration) (*Partition, err
 		return nil, err
 	}
 	ctx, cancel := context.WithCancel(context.Background())
+	queueSize := getQueueSize()
 	p := &Partition{
 		topic:   topic,
 		index:   index,
-		queue:   make(chan Message, 2000),
+		queue:   make(chan Message, queueSize),
 		pending: make(map[string]pending),
 		file:    f,
 		visTO:   visTO,
@@ -91,13 +105,13 @@ func newPartition(topic string, index int, visTO time.Duration) (*Partition, err
 	}
 	// load persisted messages into queue asynchronously to avoid blocking
 	// Commenting out file loading to test timeout issues
-	// go func() {
-	// 	if err := p.loadFromFile(); err != nil {
-	// 		log.Printf("partition %s-%d: failed to load from file: %v", topic, index, err)
-	// 	} else {
-	// 		log.Printf("partition %s-%d: successfully loaded messages from file", topic, index)
-	// 	}
-	// }()
+	go func() {
+		if err := p.loadFromFile(); err != nil {
+			log.Printf("partition %s-%d: failed to load from file: %v", topic, index, err)
+		} else {
+			log.Printf("partition %s-%d: successfully loaded messages from file", topic, index)
+		}
+	}()
 	// start monitor for timeouts
 	go p.monitorPending()
 	return p, nil
@@ -151,25 +165,25 @@ func (p *Partition) loadFromFile() error {
 }
 
 func (p *Partition) enqueue(m Message) error {
-	// persist then push to queue
-	if err := p.persist(m); err != nil {
-		return err
-	}
 	log.Printf("partition %s-%d: queue size before enqueue: %d", p.topic, p.index, len(p.queue))
 
-	// Non-blocking enqueue to prevent HTTP handler from hanging
+	// First try to enqueue(Non-blocking) to in-memory queue
 	select {
 	case p.queue <- m:
 		return nil
 	default:
-		// Queue is full - return error instead of blocking
-		log.Printf("partition %s-%d: queue full (%d messages), rejecting message %s", p.topic, p.index, len(p.queue), m.ID)
-		return fmt.Errorf("queue full (%d messages)", len(p.queue))
+		// Queue is full - persist as fallback before rejecting
+		log.Printf("partition %s-%d: queue full (%d messages), persisting message %s as fallback", p.topic, p.index, len(p.queue), m.ID)
+		if err := p.persist(m); err != nil {
+			log.Printf("partition %s-%d: failed to persist fallback message %s: %v", p.topic, p.index, m.ID, err)
+			return fmt.Errorf("queue full and persistence failed: %v", err)
+		}
+		return fmt.Errorf("queue full (%d messages), message persisted as fallback", len(p.queue))
 	}
 }
 
 func (p *Partition) monitorPending() {
-	ticker := time.NewTicker(50 * time.Second)
+	ticker := time.NewTicker(100 * time.Second)
 
 	defer ticker.Stop()
 	for {
@@ -382,6 +396,10 @@ func (b *Broker) produceHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "enqueue failed: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
+
+	// Record successful message production
+	metrics.RecordMessageProduced("msg-queue-service", topic)
+
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]string{"id": msg.ID})
 }
@@ -443,6 +461,9 @@ func (b *Broker) consumeHandler(w http.ResponseWriter, r *http.Request) {
 			// partition closed or other error
 			return
 		}
+		// Record successful message consumption
+		metrics.RecordMessageConsumed("msg-queue-service", topic)
+
 		data, _ := json.Marshal(msg)
 		// SSE format
 		fmt.Fprintf(w, "id: %s\n", msg.ID)
@@ -589,7 +610,8 @@ func main() {
 		port = "8080"
 	}
 	addr := ":" + port
-	log.Printf("broker starting on %s (index=%d count=%d)", addr, brokerIndex, brokerCount)
+	queueSize := getQueueSize()
+	log.Printf("Message Broker starting on %s (index=%d count=%d, queue_size=%d)", addr, brokerIndex, brokerCount, queueSize)
 	log.Fatal(http.ListenAndServe(addr, mux))
 }
 

@@ -54,6 +54,8 @@ spec:
           value: {{ .Values.msgQueue.replicaCount | quote }}
         - name: TOPICS
           value: {{ .Values.msgQueue.env.topics | quote }}
+        - name: QUEUE_SIZE
+          value: {{ .Values.msgQueue.env.queueSize | quote }}
         - name: POD_NAME
           valueFrom:
             fieldRef:

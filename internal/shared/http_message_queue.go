@@ -49,7 +49,7 @@ func NewHTTPMessageQueue(baseURL, topic, group, name string) (*HTTPMessageQueue,
 
 	return &HTTPMessageQueue{
 		baseURL:        baseURL,
-		client:         &http.Client{Timeout: 120 * time.Second}, // Increased timeout for better resilience
+		client:         &http.Client{Timeout: 60 * time.Second},
 		topic:          topic,
 		group:          group,
 		name:           name,
@@ -65,7 +65,7 @@ func (h *HTTPMessageQueue) calculatePublishPartition(topic string) int {
 	return int((current - 1) % uint64(h.maxPartitions))
 }
 
-// Publish sends a message to the queue with retry logic
+// Publish sends a message to the queue
 func (h *HTTPMessageQueue) Publish(topic string, payload []byte) error {
 	// Calculate partition using separate publish counter (client-side partition assignment)
 	partition := h.calculatePublishPartition(topic)
@@ -85,41 +85,18 @@ func (h *HTTPMessageQueue) Publish(topic string, payload []byte) error {
 		return fmt.Errorf("failed to marshal payload: %w", err)
 	}
 
-	// Retry logic for publish
-	maxRetries := 3
-	baseDelay := time.Second
+	resp, err := h.client.Post(url, "application/json", bytes.NewBuffer(jsonBody))
+	if err != nil {
+		return fmt.Errorf("failed to publish message: %w", err)
+	}
+	defer resp.Body.Close()
 
-	for attempt := 0; attempt < maxRetries; attempt++ {
-		if attempt > 0 {
-			// Exponential backoff
-			delay := time.Duration(attempt) * baseDelay
-			fmt.Printf("[%s] Retrying publish to partition %d after %v (attempt %d/%d)\n", h.name, partition, delay, attempt+1, maxRetries)
-			time.Sleep(delay)
-		}
-
-		resp, err := h.client.Post(url, "application/json", bytes.NewBuffer(jsonBody))
-		if err != nil {
-			if attempt == maxRetries-1 {
-				return fmt.Errorf("failed to publish message after %d attempts: %w", maxRetries, err)
-			}
-			fmt.Printf("[%s] Publish attempt %d failed: %v\n", h.name, attempt+1, err)
-			continue
-		}
-
-		defer resp.Body.Close()
-
-		if resp.StatusCode == http.StatusOK {
-			return nil // Success!
-		}
-
+	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		if attempt == maxRetries-1 {
-			return fmt.Errorf("publish failed after %d attempts with status %d: %s", maxRetries, resp.StatusCode, string(body))
-		}
-		fmt.Printf("[%s] Publish attempt %d failed with status %d: %s\n", h.name, attempt+1, resp.StatusCode, string(body))
+		return fmt.Errorf("publish failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	return fmt.Errorf("publish failed after %d attempts", maxRetries)
+	return nil
 }
 
 // Subscribe starts consuming messages from the queue (consumes from all partitions)
@@ -155,31 +132,16 @@ func (h *HTTPMessageQueue) consumeFromPartition(partition int, handler func(stri
 
 		resp, err := h.client.Do(req)
 		if err != nil {
-			// Check if it's a timeout error
-			if strings.Contains(err.Error(), "timeout") || strings.Contains(err.Error(), "deadline exceeded") {
-				fmt.Printf("[%s] Consume timeout from partition %d, retrying in 5s: %v\n", h.name, partition, err)
-				time.Sleep(5 * time.Second)
-			} else {
-				fmt.Printf("[%s] Failed to start consuming from partition %d: %v\n", h.name, partition, err)
-				time.Sleep(time.Second)
-			}
+			fmt.Printf("[%s] Failed to start consuming from partition %d: %v\n", h.name, partition, err)
+			time.Sleep(time.Second)
 			continue
 		}
 
 		if resp.StatusCode != http.StatusOK {
 			body, _ := io.ReadAll(resp.Body)
 			resp.Body.Close()
-			
-			// Use longer delay for server errors
-			delay := time.Second
-			if resp.StatusCode >= 500 {
-				delay = 5 * time.Second
-				fmt.Printf("[%s] Server error from partition %d (status %d), retrying in %v: %s\n", h.name, partition, resp.StatusCode, delay, string(body))
-			} else {
-				fmt.Printf("[%s] Consume failed from partition %d with status %d: %s\n", h.name, partition, resp.StatusCode, string(body))
-			}
-			
-			time.Sleep(delay)
+			fmt.Printf("[%s] Consume failed from partition %d with status %d: %s\n", h.name, partition, resp.StatusCode, string(body))
+			time.Sleep(time.Second)
 			continue
 		}
 
@@ -225,23 +187,15 @@ func (h *HTTPMessageQueue) consumeFromPartition(partition int, handler func(stri
 		resp.Body.Close()
 
 		if err := scanner.Err(); err != nil {
-			// Check if it's a timeout/connection error
-			if strings.Contains(err.Error(), "timeout") || strings.Contains(err.Error(), "deadline exceeded") || strings.Contains(err.Error(), "EOF") {
-				fmt.Printf("[%s] Connection lost from partition %d, reconnecting in 5s: %v\n", h.name, partition, err)
-				time.Sleep(5 * time.Second)
-			} else {
-				fmt.Printf("[%s] Scanner error from partition %d: %v\n", h.name, partition, err)
-				time.Sleep(time.Second)
-			}
-		} else {
-			// Normal disconnect, wait briefly before reconnecting
-			fmt.Printf("[%s] Connection closed from partition %d, reconnecting...\n", h.name, partition)
-			time.Sleep(time.Second)
+			fmt.Printf("[%s] Scanner error from partition %d: %v\n", h.name, partition, err)
 		}
+
+		// Wait a bit before reconnecting
+		time.Sleep(time.Second)
 	}
 }
 
-// ackMessage acknowledges a processed message with retry logic
+// ackMessage acknowledges a processed message
 func (h *HTTPMessageQueue) ackMessage(topic string, partition int, messageID string) error {
 	url := fmt.Sprintf("%s/ack?topic=%s&partition=%d&group=%s", h.baseURL, topic, partition, h.group)
 
@@ -253,36 +207,18 @@ func (h *HTTPMessageQueue) ackMessage(topic string, partition int, messageID str
 		return fmt.Errorf("failed to marshal ack request: %w", err)
 	}
 
-	// Retry ACK a few times
-	maxRetries := 2
-	for attempt := 0; attempt < maxRetries; attempt++ {
-		if attempt > 0 {
-			fmt.Printf("[%s] Retrying ACK for message %s (attempt %d/%d)\n", h.name, messageID, attempt+1, maxRetries)
-			time.Sleep(time.Duration(attempt) * time.Second)
-		}
+	resp, err := h.client.Post(url, "application/json", bytes.NewBuffer(jsonBody))
+	if err != nil {
+		return fmt.Errorf("failed to ack message: %w", err)
+	}
+	defer resp.Body.Close()
 
-		resp, err := h.client.Post(url, "application/json", bytes.NewBuffer(jsonBody))
-		if err != nil {
-			if attempt == maxRetries-1 {
-				return fmt.Errorf("failed to ack message after %d attempts: %w", maxRetries, err)
-			}
-			fmt.Printf("[%s] ACK attempt %d failed: %v\n", h.name, attempt+1, err)
-			continue
-		}
-		defer resp.Body.Close()
-
-		if resp.StatusCode == http.StatusOK {
-			return nil // Success!
-		}
-
+	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		if attempt == maxRetries-1 {
-			return fmt.Errorf("ack failed after %d attempts with status %d: %s", maxRetries, resp.StatusCode, string(body))
-		}
-		fmt.Printf("[%s] ACK attempt %d failed with status %d: %s\n", h.name, attempt+1, resp.StatusCode, string(body))
+		return fmt.Errorf("ack failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	return fmt.Errorf("ack failed after %d attempts", maxRetries)
+	return nil
 }
 
 // Close closes the HTTP client (no-op for HTTP client)
