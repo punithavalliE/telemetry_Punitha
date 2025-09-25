@@ -3,7 +3,7 @@
 
 # Global settings
 global:
-  imagePullPolicy: Never
+  imagePullPolicy: IfNotPresent
   prometheusOperator:
     enabled: false
 

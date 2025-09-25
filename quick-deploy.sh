@@ -87,7 +87,7 @@ deploy_telemetry() {
 
     # Deploy with Helm
     kubectl create namespace telemetry --dry-run=client -o yaml | kubectl apply -f - #>/dev/null
-    helm upgrade --install telemetry ./helm/telemetry-stack --wait --timeout 600s
+    helm upgrade --install telemetry ./helm/telemetry-stack --namespace telemetry --wait --timeout 600s
 
     echo ""
     echo "✅ Deployment Complete!"
